@@ -1,0 +1,319 @@
+[
+  {
+    "source_id": "RB-CHECKOUT-001",
+    "service": "checkout-api",
+    "severity": "P1",
+    "title": "Checkout database connection pool exhaustion",
+    "keywords": [
+      "checkout",
+      "database",
+      "connection pool",
+      "DB_POOL_EXHAUSTED",
+      "connection timeout"
+    ],
+    "snippet": "When checkout requests fail with database connection pool exhaustion, verify active database connections and pool utilization. Check for connection leaks or long-running transactions. Increase pool capacity only after confirming database capacity. Restart affected application instances if connections remain stuck.",
+    "recommended_checks": [
+      "Check database connection pool utilization",
+      "Check active and idle database connections",
+      "Check for long-running transactions",
+      "Check application connection leak indicators"
+    ],
+    "recommended_actions": [
+      "Increase connection pool capacity if database capacity permits",
+      "Resolve connection leaks",
+      "Restart affected application instances if required"
+    ],
+    "rollback_notes": "If increasing the pool causes database saturation, revert the pool configuration and restore the previous capacity."
+  },
+  {
+    "source_id": "RB-ORDER-001",
+    "service": "order-service",
+    "severity": "P1",
+    "title": "Order service Redis dependency failure",
+    "keywords": [
+      "order",
+      "redis",
+      "cache",
+      "REDIS_CONNECTION_REFUSED",
+      "REDIS_TIMEOUT"
+    ],
+    "snippet": "When order creation reports Redis connection failures, verify Redis availability, connectivity, and connection limits. Check whether the service can reach the Redis endpoint. Use application fallback behavior only if the fallback is known to be safe.",
+    "recommended_checks": [
+      "Check Redis availability",
+      "Check Redis connection errors",
+      "Validate network connectivity",
+      "Check Redis connection limits"
+    ],
+    "recommended_actions": [
+      "Restore Redis availability",
+      "Validate application connectivity after recovery",
+      "Use cache fallback only when supported"
+    ],
+    "rollback_notes": "Do not disable cache validation or bypass Redis permanently without confirming application consistency requirements."
+  },
+  {
+    "source_id": "RB-PAYMENT-001",
+    "service": "payment-service",
+    "severity": "P1",
+    "title": "External payment gateway degradation",
+    "keywords": [
+      "payment",
+      "gateway",
+      "timeout",
+      "503",
+      "GATEWAY_TIMEOUT",
+      "GATEWAY_503"
+    ],
+    "snippet": "For payment gateway timeouts or HTTP 503 responses, verify external gateway health and request latency. Check whether failures are isolated to the gateway. Validate retry and fallback behavior before changing application configuration.",
+    "recommended_checks": [
+      "Check external payment gateway health",
+      "Compare gateway latency with normal baseline",
+      "Check HTTP 5xx responses",
+      "Review payment retry behavior"
+    ],
+    "recommended_actions": [
+      "Use configured retry behavior",
+      "Enable supported fallback mechanisms",
+      "Contact or monitor the external gateway provider"
+    ],
+    "rollback_notes": "Avoid increasing retry counts aggressively because retries can amplify load during external dependency degradation."
+  },
+  {
+    "source_id": "RB-USER-001",
+    "service": "user-service",
+    "severity": "P2",
+    "title": "User service database latency",
+    "keywords": [
+      "user",
+      "profile",
+      "database",
+      "latency",
+      "DB_QUERY_SLOW"
+    ],
+    "snippet": "When user profile requests become slow without a significant application error increase, investigate database query latency, active connections, and resource utilization. Identify slow queries before making database configuration changes.",
+    "recommended_checks": [
+      "Check database query latency",
+      "Identify slow queries",
+      "Check active database connections",
+      "Review database resource utilization"
+    ],
+    "recommended_actions": [
+      "Optimize identified slow queries",
+      "Scale database resources when justified",
+      "Investigate connection usage"
+    ],
+    "rollback_notes": "Database configuration changes should be reversible and validated against query performance before wider rollout."
+  },
+  {
+    "source_id": "RB-INVENTORY-001",
+    "service": "inventory-service",
+    "severity": "P1",
+    "title": "Inventory downstream dependency degradation",
+    "keywords": [
+      "inventory",
+      "dependency",
+      "downstream",
+      "503",
+      "DEPENDENCY_TIMEOUT"
+    ],
+    "snippet": "When inventory requests fail because of a downstream dependency, verify the dependency health and connectivity before changing the inventory application. Use retry or fallback mechanisms only when explicitly supported.",
+    "recommended_checks": [
+      "Check downstream dependency health",
+      "Check dependency latency",
+      "Validate network connectivity",
+      "Review dependency HTTP status codes"
+    ],
+    "recommended_actions": [
+      "Restore downstream dependency availability",
+      "Use supported retry behavior",
+      "Use a safe fallback if available"
+    ],
+    "rollback_notes": "Do not bypass dependency validation if doing so can result in incorrect inventory information."
+  },
+  {
+    "source_id": "RB-NOTIFICATION-001",
+    "service": "notification-service",
+    "severity": "P2",
+    "title": "Notification message queue backlog",
+    "keywords": [
+      "notification",
+      "queue",
+      "backlog",
+      "consumer",
+      "QUEUE_BACKLOG",
+      "CONSUMER_LAG"
+    ],
+    "snippet": "For delayed notifications, check queue depth, consumer throughput, and consumer health. If the queue is growing and consumers are healthy but under-capacity, scale consumers gradually and monitor backlog recovery.",
+    "recommended_checks": [
+      "Check queue depth",
+      "Check consumer throughput",
+      "Check consumer health",
+      "Check message processing latency"
+    ],
+    "recommended_actions": [
+      "Scale notification consumers when appropriate",
+      "Restart unhealthy consumers",
+      "Monitor queue recovery"
+    ],
+    "rollback_notes": "Scale down consumers gradually after backlog returns to normal to avoid unnecessary resource usage."
+  },
+  {
+    "source_id": "RB-SEARCH-001",
+    "service": "search-service",
+    "severity": "P1",
+    "title": "Search cluster degradation",
+    "keywords": [
+      "search",
+      "cluster",
+      "shard",
+      "node",
+      "SEARCH_SHARD_UNAVAILABLE"
+    ],
+    "snippet": "When search requests fail or become slow, inspect cluster health, shard availability, node resource pressure, and cluster errors. Identify unhealthy nodes before restarting or replacing infrastructure.",
+    "recommended_checks": [
+      "Check search cluster health",
+      "Check shard availability",
+      "Check node health",
+      "Check CPU and memory pressure"
+    ],
+    "recommended_actions": [
+      "Recover unhealthy search nodes",
+      "Rebalance or recover affected shards",
+      "Scale the search cluster if sustained resource pressure is confirmed"
+    ],
+    "rollback_notes": "Cluster changes should be reversible. Avoid removing healthy nodes during an active incident."
+  },
+  {
+    "source_id": "RB-AUTH-001",
+    "service": "auth-service",
+    "severity": "P1",
+    "title": "Identity and token dependency failure",
+    "keywords": [
+      "authentication",
+      "identity",
+      "token",
+      "identity provider",
+      "TOKEN_SERVICE_TIMEOUT"
+    ],
+    "snippet": "For authentication failures caused by identity or token dependencies, verify identity provider availability, token service health, and network connectivity. Do not disable authentication validation as a workaround.",
+    "recommended_checks": [
+      "Check identity provider health",
+      "Check token service health",
+      "Validate network connectivity",
+      "Review authentication dependency errors"
+    ],
+    "recommended_actions": [
+      "Restore identity dependency availability",
+      "Restore token service connectivity",
+      "Retry authentication after dependency recovery"
+    ],
+    "rollback_notes": "Never bypass authentication validation or weaken security controls as an incident workaround."
+  },
+  {
+    "source_id": "RB-RECOMMENDATION-001",
+    "service": "recommendation-service",
+    "severity": "P2",
+    "title": "Recommendation service resource saturation",
+    "keywords": [
+      "recommendation",
+      "CPU",
+      "memory",
+      "saturation",
+      "CPU_SATURATION",
+      "MEMORY_SATURATION"
+    ],
+    "snippet": "When recommendation latency increases alongside sustained CPU and memory utilization, identify resource-intensive workloads. Scale instances when appropriate and investigate whether a workload or model operation is consuming excessive resources.",
+    "recommended_checks": [
+      "Check CPU utilization",
+      "Check memory utilization",
+      "Identify resource-intensive requests",
+      "Check instance health"
+    ],
+    "recommended_actions": [
+      "Scale recommendation service instances",
+      "Investigate resource-intensive workloads",
+      "Monitor CPU and memory after scaling"
+    ],
+    "rollback_notes": "Scale changes should be reversible. Do not terminate instances until sufficient healthy capacity is available."
+  },
+  {
+    "source_id": "RB-DEPLOYMENT-001",
+    "service": "checkout-api",
+    "severity": "P1",
+    "title": "Checkout deployment regression",
+    "keywords": [
+      "checkout",
+      "deployment",
+      "release",
+      "configuration",
+      "regression",
+      "POST_DEPLOYMENT_REGRESSION"
+    ],
+    "snippet": "If checkout errors increase immediately after a deployment while dependencies remain healthy, compare the current release with the previous known-good version. Validate configuration changes and consider rollback when a regression is confirmed.",
+    "recommended_checks": [
+      "Compare current and previous release",
+      "Review deployment configuration",
+      "Check deployment timestamp against error increase",
+      "Verify dependency health"
+    ],
+    "recommended_actions": [
+      "Roll back the release when regression is confirmed",
+      "Restore previous known-good configuration",
+      "Validate checkout behavior after rollback"
+    ],
+    "rollback_notes": "The preferred rollback target is the previous known-good release and configuration."
+  },
+  {
+    "source_id": "RB-INVESTIGATION-001",
+    "service": "order-service",
+    "severity": "P2",
+    "title": "Insufficient evidence investigation",
+    "keywords": [
+      "order",
+      "unknown",
+      "insufficient evidence",
+      "investigation",
+      "clarification"
+    ],
+    "snippet": "When an incident description and available evidence do not identify a clear failure domain, do not guess the root cause. Request additional context such as representative request IDs, exact error messages, affected endpoints, timestamps, and dependency information.",
+    "recommended_checks": [
+      "Collect representative request IDs",
+      "Collect exact error messages",
+      "Identify affected endpoints",
+      "Confirm incident start time",
+      "Check dependency health"
+    ],
+    "recommended_actions": [
+      "Request additional incident context",
+      "Collect targeted logs and metrics",
+      "Continue diagnosis after sufficient evidence is available"
+    ],
+    "rollback_notes": "No remediation should be executed when the failure domain cannot be established with sufficient confidence."
+  },
+  {
+    "source_id": "RB-INVESTIGATION-002",
+    "service": "payment-service",
+    "severity": "P1",
+    "title": "Conflicting payment incident evidence",
+    "keywords": [
+      "payment",
+      "conflicting evidence",
+      "gateway",
+      "CPU",
+      "uncertainty"
+    ],
+    "snippet": "When payment incidents contain evidence of both external dependency degradation and internal resource pressure, do not select a single root cause without additional evidence. Separate observed symptoms from hypotheses and request targeted investigation.",
+    "recommended_checks": [
+      "Compare gateway latency with application resource utilization",
+      "Check whether gateway failures correlate with CPU pressure",
+      "Review request-level failure patterns",
+      "Identify which condition occurred first"
+    ],
+    "recommended_actions": [
+      "Request additional targeted evidence",
+      "Avoid aggressive configuration changes",
+      "Proceed only after the dominant failure mechanism is established"
+    ],
+    "rollback_notes": "Do not execute remediation based solely on conflicting evidence."
+  }
+]

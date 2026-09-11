@@ -1,0 +1,134 @@
+[
+  {
+    "incident_id": "INC-SIM-001",
+    "service": "checkout-api",
+    "severity": "P1",
+    "title": "Checkout API returning high number of 500 errors",
+    "description": "Checkout requests are failing with HTTP 500 errors and latency has increased significantly. Customers are unable to complete purchases.",
+    "start_time": "2026-09-10T10:00:00Z",
+    "end_time": "2026-09-10T10:30:00Z",
+    "expected_root_cause": "Payment database connection pool exhaustion",
+    "expected_action": "Increase database connection pool capacity, investigate connection leaks, and restart affected checkout instances if required."
+  },
+  {
+    "incident_id": "INC-SIM-002",
+    "service": "order-service",
+    "severity": "P1",
+    "title": "Intermittent order creation failures",
+    "description": "Order creation is intermittently failing. Application logs show dependency errors and users are receiving failed order responses.",
+    "start_time": "2026-09-10T11:00:00Z",
+    "end_time": "2026-09-10T11:30:00Z",
+    "expected_root_cause": "Redis cache dependency failure",
+    "expected_action": "Restore Redis connectivity, verify cache health, and validate order creation after recovery."
+  },
+  {
+    "incident_id": "INC-SIM-003",
+    "service": "payment-service",
+    "severity": "P1",
+    "title": "Payment requests timing out",
+    "description": "Payment requests are timing out when communicating with the external payment gateway. Transaction completion rates have dropped.",
+    "start_time": "2026-09-10T12:00:00Z",
+    "end_time": "2026-09-10T12:30:00Z",
+    "expected_root_cause": "External payment gateway degradation",
+    "expected_action": "Verify payment gateway health, enable or validate retry/fallback behavior, and monitor transaction success rate."
+  },
+  {
+    "incident_id": "INC-SIM-004",
+    "service": "user-service",
+    "severity": "P2",
+    "title": "User profile requests are slow",
+    "description": "User profile APIs are responding slowly and request latency has increased. No significant increase in application errors has been observed.",
+    "start_time": "2026-09-10T13:00:00Z",
+    "end_time": "2026-09-10T13:30:00Z",
+    "expected_root_cause": "Database latency",
+    "expected_action": "Investigate database query latency and active connections, identify slow queries, and optimize or scale the affected database workload."
+  },
+  {
+    "incident_id": "INC-SIM-005",
+    "service": "inventory-service",
+    "severity": "P1",
+    "title": "Inventory API returning dependency errors",
+    "description": "Inventory lookups are failing because the service is receiving errors from a downstream inventory dependency.",
+    "start_time": "2026-09-10T14:00:00Z",
+    "end_time": "2026-09-10T14:30:00Z",
+    "expected_root_cause": "Downstream inventory dependency degradation",
+    "expected_action": "Check downstream dependency health, validate connectivity, and use fallback or retry behavior where supported."
+  },
+  {
+    "incident_id": "INC-SIM-006",
+    "service": "notification-service",
+    "severity": "P2",
+    "title": "Notifications are significantly delayed",
+    "description": "Email and notification delivery is delayed. Messages are accumulating in the messaging system and consumers are processing messages slower than normal.",
+    "start_time": "2026-09-10T15:00:00Z",
+    "end_time": "2026-09-10T15:30:00Z",
+    "expected_root_cause": "Message queue backlog",
+    "expected_action": "Investigate queue depth and consumer health, scale consumers if appropriate, and monitor backlog recovery."
+  },
+  {
+    "incident_id": "INC-SIM-007",
+    "service": "search-service",
+    "severity": "P1",
+    "title": "Search requests are slow and failing",
+    "description": "Search API latency has increased and some requests are failing. Search cluster health indicators show degradation.",
+    "start_time": "2026-09-10T16:00:00Z",
+    "end_time": "2026-09-10T16:30:00Z",
+    "expected_root_cause": "Search cluster health problem",
+    "expected_action": "Inspect search cluster health, identify unhealthy nodes or resource pressure, and recover or scale the affected cluster."
+  },
+  {
+    "incident_id": "INC-SIM-008",
+    "service": "auth-service",
+    "severity": "P1",
+    "title": "Authentication requests are failing",
+    "description": "Users are unable to authenticate reliably. Authentication requests are returning dependency-related failures.",
+    "start_time": "2026-09-10T17:00:00Z",
+    "end_time": "2026-09-10T17:30:00Z",
+    "expected_root_cause": "Identity or token dependency failure",
+    "expected_action": "Check identity provider and token service health, validate connectivity, and restore the dependency before retrying authentication."
+  },
+  {
+    "incident_id": "INC-SIM-009",
+    "service": "recommendation-service",
+    "severity": "P2",
+    "title": "Recommendation API response time increased",
+    "description": "Recommendation requests have become slow. CPU and memory utilization on recommendation service instances are significantly higher than normal.",
+    "start_time": "2026-09-10T18:00:00Z",
+    "end_time": "2026-09-10T18:30:00Z",
+    "expected_root_cause": "CPU and memory saturation",
+    "expected_action": "Identify resource-intensive workloads, scale affected instances, and investigate the workload causing sustained resource saturation."
+  },
+  {
+    "incident_id": "INC-SIM-010",
+    "service": "checkout-api",
+    "severity": "P1",
+    "title": "Checkout errors increased after deployment",
+    "description": "Checkout failures increased shortly after a new application deployment. The previous release did not show the same error pattern.",
+    "start_time": "2026-09-10T19:00:00Z",
+    "end_time": "2026-09-10T19:30:00Z",
+    "expected_root_cause": "Configuration or deployment regression",
+    "expected_action": "Compare the current deployment configuration with the previous version and roll back the release if the regression is confirmed."
+  },
+  {
+    "incident_id": "INC-SIM-011",
+    "service": "order-service",
+    "severity": "P2",
+    "title": "Order service experiencing intermittent failures",
+    "description": "Order creation failures have been reported, but the available incident description does not provide enough information to determine whether the issue is application, database, cache, or downstream dependency related.",
+    "start_time": "2026-09-10T20:00:00Z",
+    "end_time": "2026-09-10T20:30:00Z",
+    "expected_root_cause": null,
+    "expected_action": "Ask for additional context such as representative request IDs, error messages, affected endpoints, or dependency details before proposing remediation."
+  },
+  {
+    "incident_id": "INC-SIM-012",
+    "service": "payment-service",
+    "severity": "P1",
+    "title": "Payment failures with conflicting evidence",
+    "description": "Payment failures are occurring, but available evidence indicates both external gateway latency and internal application resource pressure. The evidence is insufficient to confidently identify a single root cause.",
+    "start_time": "2026-09-10T21:00:00Z",
+    "end_time": "2026-09-10T21:30:00Z",
+    "expected_root_cause": null,
+    "expected_action": "Report uncertainty, identify the conflicting evidence, and request additional investigation before executing a potentially unsafe remediation."
+  }
+]

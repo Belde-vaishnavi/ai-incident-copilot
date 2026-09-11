@@ -1,0 +1,170 @@
+[
+  {
+    "historical_incident_id": "HIST-001",
+    "service": "checkout-api",
+    "severity": "P1",
+    "title": "Checkout failures caused by database connection exhaustion",
+    "symptoms": [
+      "High checkout error rate",
+      "Increased checkout latency",
+      "Database connection acquisition timeouts"
+    ],
+    "root_cause": "Database connection pool exhaustion caused by long-running transactions and insufficient available connections.",
+    "resolution": "Identified long-running transactions, increased connection pool capacity within database limits, and restarted affected application instances.",
+    "related_runbook": "RB-CHECKOUT-001"
+  },
+  {
+    "historical_incident_id": "HIST-002",
+    "service": "order-service",
+    "severity": "P1",
+    "title": "Order creation failures due to Redis outage",
+    "symptoms": [
+      "Intermittent order creation failures",
+      "Redis connection refused errors",
+      "Cache lookup timeouts"
+    ],
+    "root_cause": "Redis dependency became unavailable to order-service instances.",
+    "resolution": "Restored Redis availability and validated application connectivity and order creation after recovery.",
+    "related_runbook": "RB-ORDER-001"
+  },
+  {
+    "historical_incident_id": "HIST-003",
+    "service": "payment-service",
+    "severity": "P1",
+    "title": "Payment timeouts caused by external gateway degradation",
+    "symptoms": [
+      "Payment request timeouts",
+      "HTTP 503 responses from payment provider",
+      "Increased payment retry attempts"
+    ],
+    "root_cause": "External payment gateway experienced elevated latency and intermittent service failures.",
+    "resolution": "Confirmed gateway degradation, monitored provider recovery, and relied on supported retry behavior without aggressively increasing retry volume.",
+    "related_runbook": "RB-PAYMENT-001"
+  },
+  {
+    "historical_incident_id": "HIST-004",
+    "service": "user-service",
+    "severity": "P2",
+    "title": "User profile latency caused by slow database queries",
+    "symptoms": [
+      "High user profile latency",
+      "Slow database queries",
+      "Low application error rate"
+    ],
+    "root_cause": "Database query latency increased because of inefficient queries and database workload pressure.",
+    "resolution": "Identified slow queries, optimized the affected queries, and monitored database latency after the change.",
+    "related_runbook": "RB-USER-001"
+  },
+  {
+    "historical_incident_id": "HIST-005",
+    "service": "inventory-service",
+    "severity": "P1",
+    "title": "Inventory failures caused by downstream dependency outage",
+    "symptoms": [
+      "Inventory lookup failures",
+      "HTTP 503 dependency responses",
+      "Dependency timeout errors"
+    ],
+    "root_cause": "A downstream warehouse inventory dependency experienced service degradation.",
+    "resolution": "Confirmed downstream dependency degradation, restored connectivity, and validated inventory requests after recovery.",
+    "related_runbook": "RB-INVENTORY-001"
+  },
+  {
+    "historical_incident_id": "HIST-006",
+    "service": "notification-service",
+    "severity": "P2",
+    "title": "Notification delays caused by queue backlog",
+    "symptoms": [
+      "Delayed notifications",
+      "Increasing queue depth",
+      "Consumer processing lag"
+    ],
+    "root_cause": "Notification consumers were processing messages below the incoming message rate, causing queue backlog.",
+    "resolution": "Scaled notification consumers and monitored queue depth until the backlog returned to normal.",
+    "related_runbook": "RB-NOTIFICATION-001"
+  },
+  {
+    "historical_incident_id": "HIST-007",
+    "service": "search-service",
+    "severity": "P1",
+    "title": "Search failures caused by unhealthy cluster node",
+    "symptoms": [
+      "Search latency increase",
+      "Unavailable search shards",
+      "Search node health degradation"
+    ],
+    "root_cause": "One or more search cluster nodes became unhealthy and affected shard availability.",
+    "resolution": "Recovered unhealthy nodes and affected shards, then verified cluster health and search latency.",
+    "related_runbook": "RB-SEARCH-001"
+  },
+  {
+    "historical_incident_id": "HIST-008",
+    "service": "auth-service",
+    "severity": "P1",
+    "title": "Authentication failures caused by identity provider outage",
+    "symptoms": [
+      "Authentication failures",
+      "Token validation errors",
+      "Identity provider timeouts"
+    ],
+    "root_cause": "The identity provider became unavailable, preventing reliable token validation.",
+    "resolution": "Confirmed identity provider outage, monitored recovery, and validated authentication after service restoration.",
+    "related_runbook": "RB-AUTH-001"
+  },
+  {
+    "historical_incident_id": "HIST-009",
+    "service": "recommendation-service",
+    "severity": "P2",
+    "title": "Recommendation latency caused by resource saturation",
+    "symptoms": [
+      "High recommendation API latency",
+      "CPU utilization above 90 percent",
+      "Memory utilization above 90 percent"
+    ],
+    "root_cause": "Recommendation workloads saturated available CPU and memory resources.",
+    "resolution": "Scaled recommendation service capacity and investigated the workload responsible for sustained resource consumption.",
+    "related_runbook": "RB-RECOMMENDATION-001"
+  },
+  {
+    "historical_incident_id": "HIST-010",
+    "service": "checkout-api",
+    "severity": "P1",
+    "title": "Checkout errors caused by deployment configuration regression",
+    "symptoms": [
+      "Checkout error rate increased after deployment",
+      "Configuration errors",
+      "Dependencies remained healthy"
+    ],
+    "root_cause": "A configuration change introduced in a new checkout deployment caused application failures.",
+    "resolution": "Compared the current deployment with the previous known-good release and rolled back the configuration and application version.",
+    "related_runbook": "RB-DEPLOYMENT-001"
+  },
+  {
+    "historical_incident_id": "HIST-011",
+    "service": "order-service",
+    "severity": "P2",
+    "title": "Order failures requiring additional investigation",
+    "symptoms": [
+      "Intermittent order failures",
+      "Insufficient diagnostic information",
+      "No clear dependency failure"
+    ],
+    "root_cause": "Could not be established from the initial evidence.",
+    "resolution": "Collected request IDs, exact error messages, affected endpoints, and additional dependency information before continuing diagnosis.",
+    "related_runbook": "RB-INVESTIGATION-001"
+  },
+  {
+    "historical_incident_id": "HIST-012",
+    "service": "payment-service",
+    "severity": "P1",
+    "title": "Payment incident with conflicting gateway and application evidence",
+    "symptoms": [
+      "Payment gateway latency",
+      "Elevated application CPU",
+      "Payment failures"
+    ],
+    "root_cause": "Could not be confidently established because external gateway degradation and internal resource pressure occurred simultaneously.",
+    "resolution": "Collected request-level evidence and timing information before selecting a remediation path.",
+    "related_runbook": "RB-INVESTIGATION-002"
+  }
+]

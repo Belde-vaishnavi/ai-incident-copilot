@@ -1,0 +1,170 @@
+[
+  {
+    "incident_id": "INC-SIM-001",
+    "service": "checkout-api",
+    "timestamp": "2026-09-10T10:15:00Z",
+    "latency_ms": 3200,
+    "error_rate_percent": 28.5,
+    "cpu_percent": 72.0,
+    "memory_percent": 68.0,
+    "dependency_health": {
+      "payment_database": "degraded",
+      "redis": "healthy",
+      "external_payment_gateway": "healthy"
+    }
+  },
+  {
+    "incident_id": "INC-SIM-002",
+    "service": "order-service",
+    "timestamp": "2026-09-10T11:15:00Z",
+    "latency_ms": 1800,
+    "error_rate_percent": 19.2,
+    "cpu_percent": 61.0,
+    "memory_percent": 64.0,
+    "dependency_health": {
+      "redis": "down",
+      "order_database": "healthy",
+      "inventory_service": "healthy"
+    }
+  },
+  {
+    "incident_id": "INC-SIM-003",
+    "service": "payment-service",
+    "timestamp": "2026-09-10T12:15:00Z",
+    "latency_ms": 4800,
+    "error_rate_percent": 31.7,
+    "cpu_percent": 55.0,
+    "memory_percent": 59.0,
+    "dependency_health": {
+      "external_payment_gateway": "degraded",
+      "payment_database": "healthy",
+      "redis": "healthy"
+    }
+  },
+  {
+    "incident_id": "INC-SIM-004",
+    "service": "user-service",
+    "timestamp": "2026-09-10T13:15:00Z",
+    "latency_ms": 2400,
+    "error_rate_percent": 3.1,
+    "cpu_percent": 48.0,
+    "memory_percent": 57.0,
+    "dependency_health": {
+      "user_database": "degraded",
+      "identity_provider": "healthy",
+      "redis": "healthy"
+    }
+  },
+  {
+    "incident_id": "INC-SIM-005",
+    "service": "inventory-service",
+    "timestamp": "2026-09-10T14:15:00Z",
+    "latency_ms": 2900,
+    "error_rate_percent": 24.6,
+    "cpu_percent": 58.0,
+    "memory_percent": 62.0,
+    "dependency_health": {
+      "inventory_database": "healthy",
+      "warehouse_dependency": "degraded",
+      "order_service": "healthy"
+    }
+  },
+  {
+    "incident_id": "INC-SIM-006",
+    "service": "notification-service",
+    "timestamp": "2026-09-10T15:15:00Z",
+    "latency_ms": 3500,
+    "error_rate_percent": 8.4,
+    "cpu_percent": 67.0,
+    "memory_percent": 71.0,
+    "dependency_health": {
+      "message_queue": "degraded",
+      "notification_database": "healthy",
+      "email_provider": "healthy"
+    }
+  },
+  {
+    "incident_id": "INC-SIM-007",
+    "service": "search-service",
+    "timestamp": "2026-09-10T16:15:00Z",
+    "latency_ms": 4100,
+    "error_rate_percent": 22.8,
+    "cpu_percent": 84.0,
+    "memory_percent": 88.0,
+    "dependency_health": {
+      "search_cluster": "degraded",
+      "search_database": "healthy",
+      "redis": "healthy"
+    }
+  },
+  {
+    "incident_id": "INC-SIM-008",
+    "service": "auth-service",
+    "timestamp": "2026-09-10T17:15:00Z",
+    "latency_ms": 2700,
+    "error_rate_percent": 35.2,
+    "cpu_percent": 51.0,
+    "memory_percent": 56.0,
+    "dependency_health": {
+      "identity_provider": "down",
+      "token_service": "degraded",
+      "user_database": "healthy"
+    }
+  },
+  {
+    "incident_id": "INC-SIM-009",
+    "service": "recommendation-service",
+    "timestamp": "2026-09-10T18:15:00Z",
+    "latency_ms": 3900,
+    "error_rate_percent": 12.3,
+    "cpu_percent": 96.0,
+    "memory_percent": 94.0,
+    "dependency_health": {
+      "recommendation_database": "healthy",
+      "feature_store": "healthy",
+      "model_service": "healthy"
+    }
+  },
+  {
+    "incident_id": "INC-SIM-010",
+    "service": "checkout-api",
+    "timestamp": "2026-09-10T19:15:00Z",
+    "latency_ms": 2600,
+    "error_rate_percent": 26.4,
+    "cpu_percent": 63.0,
+    "memory_percent": 65.0,
+    "dependency_health": {
+      "payment_database": "healthy",
+      "redis": "healthy",
+      "external_payment_gateway": "healthy"
+    }
+  },
+  {
+    "incident_id": "INC-SIM-011",
+    "service": "order-service",
+    "timestamp": "2026-09-10T20:15:00Z",
+    "latency_ms": 1900,
+    "error_rate_percent": 9.7,
+    "cpu_percent": 59.0,
+    "memory_percent": 63.0,
+    "dependency_health": {
+      "redis": "healthy",
+      "order_database": "healthy",
+      "inventory_service": "healthy"
+    }
+  },
+  {
+    "incident_id": "INC-SIM-012",
+    "service": "payment-service",
+    "timestamp": "2026-09-10T21:15:00Z",
+    "latency_ms": 4400,
+    "error_rate_percent": 29.8,
+    "cpu_percent": 89.0,
+    "memory_percent": 86.0,
+    "dependency_health": {
+      "external_payment_gateway": "degraded",
+      "payment_database": "healthy",
+      "payment_application": "degraded"
+    }
+  }
+]

@@ -1,0 +1,319 @@
+[
+  {
+    "incident_id": "INC-SIM-001",
+    "service": "checkout-api",
+    "timestamp": "2026-09-10T10:05:12Z",
+    "level": "ERROR",
+    "message": "Failed to acquire database connection from pool",
+    "request_id": "req-checkout-001",
+    "error_code": "DB_POOL_EXHAUSTED"
+  },
+  {
+    "incident_id": "INC-SIM-001",
+    "service": "checkout-api",
+    "timestamp": "2026-09-10T10:08:31Z",
+    "level": "ERROR",
+    "message": "Database connection timeout while processing checkout",
+    "request_id": "req-checkout-002",
+    "error_code": "DB_CONNECTION_TIMEOUT"
+  },
+  {
+    "incident_id": "INC-SIM-001",
+    "service": "checkout-api",
+    "timestamp": "2026-09-10T10:15:44Z",
+    "level": "ERROR",
+    "message": "Checkout request failed after waiting for available database connection",
+    "request_id": "req-checkout-003",
+    "error_code": "DB_POOL_EXHAUSTED"
+  },
+
+  {
+    "incident_id": "INC-SIM-002",
+    "service": "order-service",
+    "timestamp": "2026-09-10T11:04:21Z",
+    "level": "ERROR",
+    "message": "Redis connection refused while retrieving order state",
+    "request_id": "req-order-001",
+    "error_code": "REDIS_CONNECTION_REFUSED"
+  },
+  {
+    "incident_id": "INC-SIM-002",
+    "service": "order-service",
+    "timestamp": "2026-09-10T11:12:08Z",
+    "level": "ERROR",
+    "message": "Cache lookup failed after Redis dependency timeout",
+    "request_id": "req-order-002",
+    "error_code": "REDIS_TIMEOUT"
+  },
+  {
+    "incident_id": "INC-SIM-002",
+    "service": "order-service",
+    "timestamp": "2026-09-10T11:25:17Z",
+    "level": "WARN",
+    "message": "Order creation falling back due to unavailable cache dependency",
+    "request_id": "req-order-003",
+    "error_code": "CACHE_FALLBACK"
+  },
+
+  {
+    "incident_id": "INC-SIM-003",
+    "service": "payment-service",
+    "timestamp": "2026-09-10T12:03:14Z",
+    "level": "ERROR",
+    "message": "Payment gateway request exceeded timeout threshold",
+    "request_id": "req-payment-001",
+    "error_code": "GATEWAY_TIMEOUT"
+  },
+  {
+    "incident_id": "INC-SIM-003",
+    "service": "payment-service",
+    "timestamp": "2026-09-10T12:14:39Z",
+    "level": "ERROR",
+    "message": "External payment provider returned HTTP 503",
+    "request_id": "req-payment-002",
+    "error_code": "GATEWAY_503"
+  },
+  {
+    "incident_id": "INC-SIM-003",
+    "service": "payment-service",
+    "timestamp": "2026-09-10T12:26:52Z",
+    "level": "WARN",
+    "message": "Payment retry attempts increasing due to gateway latency",
+    "request_id": "req-payment-003",
+    "error_code": "GATEWAY_DEGRADED"
+  },
+
+  {
+    "incident_id": "INC-SIM-004",
+    "service": "user-service",
+    "timestamp": "2026-09-10T13:05:10Z",
+    "level": "WARN",
+    "message": "User profile database query exceeded latency threshold",
+    "request_id": "req-user-001",
+    "error_code": "DB_QUERY_SLOW"
+  },
+  {
+    "incident_id": "INC-SIM-004",
+    "service": "user-service",
+    "timestamp": "2026-09-10T13:17:45Z",
+    "level": "WARN",
+    "message": "Database response latency above configured threshold",
+    "request_id": "req-user-002",
+    "error_code": "DB_LATENCY_HIGH"
+  },
+
+  {
+    "incident_id": "INC-SIM-005",
+    "service": "inventory-service",
+    "timestamp": "2026-09-10T14:04:16Z",
+    "level": "ERROR",
+    "message": "Downstream inventory dependency returned HTTP 503",
+    "request_id": "req-inventory-001",
+    "error_code": "DEPENDENCY_503"
+  },
+  {
+    "incident_id": "INC-SIM-005",
+    "service": "inventory-service",
+    "timestamp": "2026-09-10T14:13:27Z",
+    "level": "ERROR",
+    "message": "Inventory lookup failed due to downstream dependency timeout",
+    "request_id": "req-inventory-002",
+    "error_code": "DEPENDENCY_TIMEOUT"
+  },
+  {
+    "incident_id": "INC-SIM-005",
+    "service": "inventory-service",
+    "timestamp": "2026-09-10T14:22:51Z",
+    "level": "WARN",
+    "message": "Dependency health check reporting degraded status",
+    "request_id": "req-inventory-003",
+    "error_code": "DEPENDENCY_DEGRADED"
+  },
+
+  {
+    "incident_id": "INC-SIM-006",
+    "service": "notification-service",
+    "timestamp": "2026-09-10T15:03:33Z",
+    "level": "WARN",
+    "message": "Message queue depth exceeded normal operating threshold",
+    "request_id": "req-notification-001",
+    "error_code": "QUEUE_BACKLOG"
+  },
+  {
+    "incident_id": "INC-SIM-006",
+    "service": "notification-service",
+    "timestamp": "2026-09-10T15:14:02Z",
+    "level": "WARN",
+    "message": "Notification consumers processing messages below expected throughput",
+    "request_id": "req-notification-002",
+    "error_code": "CONSUMER_LAG"
+  },
+  {
+    "incident_id": "INC-SIM-006",
+    "service": "notification-service",
+    "timestamp": "2026-09-10T15:27:18Z",
+    "level": "WARN",
+    "message": "Queue backlog continues to increase",
+    "request_id": "req-notification-003",
+    "error_code": "QUEUE_DEPTH_HIGH"
+  },
+
+  {
+    "incident_id": "INC-SIM-007",
+    "service": "search-service",
+    "timestamp": "2026-09-10T16:05:19Z",
+    "level": "ERROR",
+    "message": "Search cluster returned unavailable shard response",
+    "request_id": "req-search-001",
+    "error_code": "SEARCH_SHARD_UNAVAILABLE"
+  },
+  {
+    "incident_id": "INC-SIM-007",
+    "service": "search-service",
+    "timestamp": "2026-09-10T16:16:41Z",
+    "level": "WARN",
+    "message": "Search cluster node health reported degraded",
+    "request_id": "req-search-002",
+    "error_code": "CLUSTER_DEGRADED"
+  },
+  {
+    "incident_id": "INC-SIM-007",
+    "service": "search-service",
+    "timestamp": "2026-09-10T16:24:53Z",
+    "level": "ERROR",
+    "message": "Search request failed while communicating with unhealthy cluster node",
+    "request_id": "req-search-003",
+    "error_code": "NODE_UNAVAILABLE"
+  },
+
+  {
+    "incident_id": "INC-SIM-008",
+    "service": "auth-service",
+    "timestamp": "2026-09-10T17:03:07Z",
+    "level": "ERROR",
+    "message": "Token validation request failed against identity provider",
+    "request_id": "req-auth-001",
+    "error_code": "IDENTITY_PROVIDER_ERROR"
+  },
+  {
+    "incident_id": "INC-SIM-008",
+    "service": "auth-service",
+    "timestamp": "2026-09-10T17:12:29Z",
+    "level": "ERROR",
+    "message": "Authentication request timed out while contacting token dependency",
+    "request_id": "req-auth-002",
+    "error_code": "TOKEN_SERVICE_TIMEOUT"
+  },
+  {
+    "incident_id": "INC-SIM-008",
+    "service": "auth-service",
+    "timestamp": "2026-09-10T17:24:45Z",
+    "level": "WARN",
+    "message": "Authentication failures increasing due to identity dependency errors",
+    "request_id": "req-auth-003",
+    "error_code": "AUTH_DEPENDENCY_FAILURE"
+  },
+
+  {
+    "incident_id": "INC-SIM-009",
+    "service": "recommendation-service",
+    "timestamp": "2026-09-10T18:04:18Z",
+    "level": "WARN",
+    "message": "Recommendation computation exceeded expected processing time",
+    "request_id": "req-recommendation-001",
+    "error_code": "HIGH_PROCESSING_TIME"
+  },
+  {
+    "incident_id": "INC-SIM-009",
+    "service": "recommendation-service",
+    "timestamp": "2026-09-10T18:13:46Z",
+    "level": "WARN",
+    "message": "Application instance CPU utilization remains above saturation threshold",
+    "request_id": "req-recommendation-002",
+    "error_code": "CPU_SATURATION"
+  },
+  {
+    "incident_id": "INC-SIM-009",
+    "service": "recommendation-service",
+    "timestamp": "2026-09-10T18:25:11Z",
+    "level": "WARN",
+    "message": "Memory utilization approaching instance capacity",
+    "request_id": "req-recommendation-003",
+    "error_code": "MEMORY_SATURATION"
+  },
+
+  {
+    "incident_id": "INC-SIM-010",
+    "service": "checkout-api",
+    "timestamp": "2026-09-10T19:04:22Z",
+    "level": "ERROR",
+    "message": "Checkout request failed after deployment configuration change",
+    "request_id": "req-checkout-deploy-001",
+    "error_code": "CONFIGURATION_ERROR"
+  },
+  {
+    "incident_id": "INC-SIM-010",
+    "service": "checkout-api",
+    "timestamp": "2026-09-10T19:12:38Z",
+    "level": "ERROR",
+    "message": "New application version unable to initialize payment configuration",
+    "request_id": "req-checkout-deploy-002",
+    "error_code": "INVALID_PAYMENT_CONFIG"
+  },
+  {
+    "incident_id": "INC-SIM-010",
+    "service": "checkout-api",
+    "timestamp": "2026-09-10T19:23:57Z",
+    "level": "WARN",
+    "message": "Error rate increased immediately following deployment",
+    "request_id": "req-checkout-deploy-003",
+    "error_code": "POST_DEPLOYMENT_REGRESSION"
+  },
+
+  {
+    "incident_id": "INC-SIM-011",
+    "service": "order-service",
+    "timestamp": "2026-09-10T20:08:15Z",
+    "level": "ERROR",
+    "message": "Order creation request failed",
+    "request_id": "req-order-unknown-001",
+    "error_code": "ORDER_REQUEST_FAILED"
+  },
+  {
+    "incident_id": "INC-SIM-011",
+    "service": "order-service",
+    "timestamp": "2026-09-10T20:19:41Z",
+    "level": "ERROR",
+    "message": "Order operation returned an unspecified internal error",
+    "request_id": "req-order-unknown-002",
+    "error_code": "INTERNAL_ERROR"
+  },
+
+  {
+    "incident_id": "INC-SIM-012",
+    "service": "payment-service",
+    "timestamp": "2026-09-10T21:04:31Z",
+    "level": "ERROR",
+    "message": "Payment gateway request timed out",
+    "request_id": "req-payment-conflict-001",
+    "error_code": "GATEWAY_TIMEOUT"
+  },
+  {
+    "incident_id": "INC-SIM-012",
+    "service": "payment-service",
+    "timestamp": "2026-09-10T21:11:52Z",
+    "level": "WARN",
+    "message": "Payment service CPU utilization increased significantly",
+    "request_id": "req-payment-conflict-002",
+    "error_code": "CPU_HIGH"
+  },
+  {
+    "incident_id": "INC-SIM-012",
+    "service": "payment-service",
+    "timestamp": "2026-09-10T21:23:16Z",
+    "level": "ERROR",
+    "message": "Payment processing failed while gateway latency remained elevated",
+    "request_id": "req-payment-conflict-003",
+    "error_code": "PAYMENT_PROCESSING_FAILURE"
+  }
+]
