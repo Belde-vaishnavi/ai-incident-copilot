@@ -9,6 +9,8 @@ Safety rules:
 - Update when an existing ServiceNow incident ID is present.
 - ServiceNow tools independently enforce approval as a second safety layer.
 - Never execute remediation actions.
+- Correctly distinguish a newly-created incident from an
+  idempotency/duplicate-prevention result.
 """
 
 import logging
@@ -42,6 +44,30 @@ def _severity_to_servicenow_fields(
         )
 
     return mapping[normalized]
+
+
+def _error_state(
+    state: dict,
+    *,
+    operation: str,
+    error_code: str | None,
+    error_message: str,
+    final_outcome: str,
+) -> dict:
+    """
+    Build a consistent ServiceNow failure state.
+    """
+
+    return {
+        "servicenow_status": "failed",
+        "servicenow_operation": operation,
+        "servicenow_error_code": error_code,
+        "servicenow_error_message": error_message,
+        "errors": list(
+            state.get("errors", [])
+        ) + [error_message],
+        "final_outcome": final_outcome,
+    }
 
 
 def write_to_servicenow(state: dict) -> dict:
@@ -86,17 +112,16 @@ def write_to_servicenow(state: dict) -> dict:
 
         logger.error(message)
 
-        return {
-            "servicenow_status": "failed",
-            "servicenow_operation": "none",
-            "servicenow_error_code": "MISSING_INCIDENT",
-            "servicenow_error_message": message,
-            "errors": list(state.get("errors", [])) + [message],
-            "final_outcome": (
+        return _error_state(
+            state,
+            operation="none",
+            error_code="MISSING_INCIDENT",
+            error_message=message,
+            final_outcome=(
                 "ServiceNow write failed: "
                 "incident state is missing."
             ),
-        }
+        )
 
     if remediation_plan is None:
         message = (
@@ -106,17 +131,16 @@ def write_to_servicenow(state: dict) -> dict:
 
         logger.error(message)
 
-        return {
-            "servicenow_status": "failed",
-            "servicenow_operation": "none",
-            "servicenow_error_code": "MISSING_REMEDIATION_PLAN",
-            "servicenow_error_message": message,
-            "errors": list(state.get("errors", [])) + [message],
-            "final_outcome": (
+        return _error_state(
+            state,
+            operation="none",
+            error_code="MISSING_REMEDIATION_PLAN",
+            error_message=message,
+            final_outcome=(
                 "ServiceNow write failed: "
                 "remediation plan is missing."
             ),
-        }
+        )
 
     # ---------------------------------------------------------
     # Severity mapping
@@ -132,16 +156,15 @@ def write_to_servicenow(state: dict) -> dict:
 
         logger.error(message)
 
-        return {
-            "servicenow_status": "failed",
-            "servicenow_operation": "none",
-            "servicenow_error_code": "INVALID_SEVERITY",
-            "servicenow_error_message": message,
-            "errors": list(state.get("errors", [])) + [message],
-            "final_outcome": (
+        return _error_state(
+            state,
+            operation="none",
+            error_code="INVALID_SEVERITY",
+            error_message=message,
+            final_outcome=(
                 "ServiceNow write failed: invalid severity."
             ),
-        }
+        )
 
     servicenow_update = (
         remediation_plan.servicenow_update
@@ -174,6 +197,10 @@ def write_to_servicenow(state: dict) -> dict:
             approval_status=approval_status,
         )
 
+        # -----------------------------------------------------
+        # CREATE FAILURE
+        # -----------------------------------------------------
+
         if not result.success:
             message = (
                 result.error_message
@@ -187,18 +214,15 @@ def write_to_servicenow(state: dict) -> dict:
                 message,
             )
 
-            return {
-                "servicenow_status": "failed",
-                "servicenow_operation": "create",
-                "servicenow_error_code": result.error_code,
-                "servicenow_error_message": message,
-                "errors": list(
-                    state.get("errors", [])
-                ) + [message],
-                "final_outcome": (
+            return _error_state(
+                state,
+                operation="create",
+                error_code=result.error_code,
+                error_message=message,
+                final_outcome=(
                     "ServiceNow incident creation failed."
                 ),
-            }
+            )
 
         incident_record = result.incident
 
@@ -208,21 +232,67 @@ def write_to_servicenow(state: dict) -> dict:
                 "returned no incident record."
             )
 
-            return {
-                "servicenow_status": "failed",
-                "servicenow_operation": "create",
-                "servicenow_error_code": (
-                    "INVALID_CREATE_RESPONSE"
-                ),
-                "servicenow_error_message": message,
-                "errors": list(
-                    state.get("errors", [])
-                ) + [message],
-                "final_outcome": (
+            logger.error(message)
+
+            return _error_state(
+                state,
+                operation="create",
+                error_code="INVALID_CREATE_RESPONSE",
+                error_message=message,
+                final_outcome=(
                     "ServiceNow incident creation failed: "
                     "invalid response."
                 ),
+            )
+
+        # -----------------------------------------------------
+        # IDEMPOTENCY / DUPLICATE PREVENTION
+        # -----------------------------------------------------
+
+        result_operation = (
+            (result.operation or "")
+            .strip()
+            .lower()
+        )
+
+        if result_operation == "create_duplicate_prevented":
+            logger.info(
+                "ServiceNow duplicate creation prevented: "
+                "number=%s sys_id=%s",
+                incident_record.number,
+                incident_record.sys_id,
+            )
+
+            return {
+                "servicenow_incident_id": (
+                    incident_record.sys_id
+                ),
+                "servicenow_number": (
+                    incident_record.number
+                ),
+                "servicenow_status": (
+                    "duplicate_prevented"
+                ),
+                "servicenow_operation": (
+                    "create_duplicate_prevented"
+                ),
+                "servicenow_error_code": (
+                    result.error_code
+                ),
+                "servicenow_error_message": (
+                    result.error_message
+                ),
+                "final_outcome": (
+                    f"ServiceNow incident "
+                    f"{incident_record.number} "
+                    f"already existed; duplicate creation "
+                    f"was prevented by idempotency protection."
+                ),
             }
+
+        # -----------------------------------------------------
+        # NORMAL CREATE SUCCESS
+        # -----------------------------------------------------
 
         logger.info(
             "ServiceNow incident created: "
@@ -282,18 +352,15 @@ def write_to_servicenow(state: dict) -> dict:
             message,
         )
 
-        return {
-            "servicenow_status": "failed",
-            "servicenow_operation": "update",
-            "servicenow_error_code": result.error_code,
-            "servicenow_error_message": message,
-            "errors": list(
-                state.get("errors", [])
-            ) + [message],
-            "final_outcome": (
+        return _error_state(
+            state,
+            operation="update",
+            error_code=result.error_code,
+            error_message=message,
+            final_outcome=(
                 "ServiceNow incident update failed."
             ),
-        }
+        )
 
     incident_record = result.incident
 
