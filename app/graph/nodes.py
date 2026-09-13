@@ -8,6 +8,10 @@ The agents perform LLM-based reasoning.
 The tools perform external/data operations.
 """
 
+from __future__ import annotations
+
+import re
+
 from app.agents.diagnosis_agent import diagnose_incident
 from app.agents.remediation_agent import create_remediation_plan
 from app.tools.historical_tools import search_historical_incidents
@@ -17,7 +21,89 @@ from app.tools.runbook_tools import search_runbooks
 from langgraph.types import interrupt
 
 
-def investigate_incident(state: dict) -> dict:
+# ----------------------------------------------------------------------
+# Evidence safety signals
+# ----------------------------------------------------------------------
+
+INSUFFICIENT_CONTEXT_PATTERNS = (
+    "not enough information",
+    "not enough context",
+    "insufficient information",
+    "insufficient context",
+    "does not provide enough information",
+    "does not provide sufficient information",
+    "cannot determine",
+    "unable to determine",
+)
+
+CONFLICTING_EVIDENCE_PATTERNS = (
+    "conflicting evidence",
+    "conflicting signals",
+    "conflicting findings",
+    "insufficient to confidently identify a single root cause",
+    "multiple possible root causes",
+)
+
+
+def _normalize_description(
+    description: str,
+) -> str:
+    """
+    Normalize incident description for deterministic safety checks.
+    """
+    normalized = description.lower()
+
+    normalized = re.sub(
+        r"\s+",
+        " ",
+        normalized,
+    )
+
+    return normalized.strip()
+
+
+def _has_insufficient_context_signal(
+    description: str,
+) -> bool:
+    """
+    Detect explicit statements that the incident description lacks
+    enough diagnostic context.
+
+    This is intentionally deterministic. We do not ask an LLM to decide
+    whether the incident explicitly says that context is missing.
+    """
+    normalized = _normalize_description(
+        description
+    )
+
+    return any(
+        pattern in normalized
+        for pattern in INSUFFICIENT_CONTEXT_PATTERNS
+    )
+
+
+def _has_conflicting_evidence_signal(
+    description: str,
+) -> bool:
+    """
+    Detect explicit statements that available evidence is conflicting.
+
+    This prevents evidence-source count from being treated as equivalent
+    to evidence consistency.
+    """
+    normalized = _normalize_description(
+        description
+    )
+
+    return any(
+        pattern in normalized
+        for pattern in CONFLICTING_EVIDENCE_PATTERNS
+    )
+
+
+def investigate_incident(
+    state: dict,
+) -> dict:
     """
     Collect investigation evidence from all configured sources.
 
@@ -44,11 +130,16 @@ def investigate_incident(state: dict) -> dict:
         severity=incident.severity,
     )
 
-    errors = list(state.get("errors", []))
+    errors = list(
+        state.get(
+            "errors",
+            [],
+        )
+    )
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Historical incident search
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     try:
         historical_context = search_historical_incidents(
@@ -68,72 +159,114 @@ def investigate_incident(state: dict) -> dict:
             f"{type(exc).__name__} - {exc}"
         )
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Record investigation tool failures
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     if not logs_result.success:
         errors.append(
-            f"fetch_logs failed: "
+            "fetch_logs failed: "
             f"{logs_result.error_code} - "
             f"{logs_result.error_message}"
         )
 
     if not metrics_result.success:
         errors.append(
-            f"fetch_metrics failed: "
+            "fetch_metrics failed: "
             f"{metrics_result.error_code} - "
             f"{metrics_result.error_message}"
         )
 
     if not runbook_result.success:
         errors.append(
-            f"search_runbooks failed: "
+            "search_runbooks failed: "
             f"{runbook_result.error_code} - "
             f"{runbook_result.error_message}"
         )
 
-    retry_count = state.get("retry_count", 0)
+    retry_count = state.get(
+        "retry_count",
+        0,
+    )
 
     return {
         "logs": logs_result.records,
         "metrics": metrics_result.records,
         "runbooks": runbook_result.matches,
         "historical_context": historical_context,
-
         "logs_tool_success": logs_result.success,
         "metrics_tool_success": metrics_result.success,
         "runbook_tool_success": runbook_result.success,
         "historical_tool_success": historical_success,
-
         "errors": errors,
-
         "investigation_status": "completed",
-
         "retry_count": retry_count + 1,
     }
 
 
-def assess_evidence(state: dict) -> dict:
+def assess_evidence(
+    state: dict,
+) -> dict:
     """
-    Determine whether enough evidence exists to continue
+    Determine whether enough consistent evidence exists to continue
     to diagnosis.
+
+    Safety principle:
+
+        evidence quantity != evidence quality
+
+    The workflow therefore checks:
+    1. Required investigation tools succeeded.
+    2. The incident explicitly says whether context is insufficient.
+    3. The incident explicitly says whether evidence is conflicting.
+    4. At least two independent evidence sources are available.
+
+    Explicit insufficient/conflicting signals take precedence over the
+    source count.
     """
 
-    logs = state.get("logs", [])
-    metrics = state.get("metrics", [])
-    runbooks = state.get("runbooks", [])
-    historical_context = state.get("historical_context", [])
+    incident = state["incident"]
 
-    # ---------------------------------------------------------
+    logs = state.get(
+        "logs",
+        [],
+    )
+
+    metrics = state.get(
+        "metrics",
+        [],
+    )
+
+    runbooks = state.get(
+        "runbooks",
+        [],
+    )
+
+    historical_context = state.get(
+        "historical_context",
+        [],
+    )
+
+    description = incident.description
+
+    # --------------------------------------------------------------
     # Core investigation failures
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     core_tool_failures = any(
         [
-            not state.get("logs_tool_success", False),
-            not state.get("metrics_tool_success", False),
-            not state.get("runbook_tool_success", False),
+            not state.get(
+                "logs_tool_success",
+                False,
+            ),
+            not state.get(
+                "metrics_tool_success",
+                False,
+            ),
+            not state.get(
+                "runbook_tool_success",
+                False,
+            ),
         ]
     )
 
@@ -144,9 +277,35 @@ def assess_evidence(state: dict) -> dict:
             "investigation_status": "tool_failure",
         }
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
+    # Explicit insufficient-context safety signal
+    # --------------------------------------------------------------
+
+    if _has_insufficient_context_signal(
+        description
+    ):
+        return {
+            "evidence_sufficient": False,
+            "clarification_needed": True,
+            "investigation_status": "insufficient_evidence",
+        }
+
+    # --------------------------------------------------------------
+    # Explicit conflicting-evidence safety signal
+    # --------------------------------------------------------------
+
+    if _has_conflicting_evidence_signal(
+        description
+    ):
+        return {
+            "evidence_sufficient": False,
+            "clarification_needed": True,
+            "investigation_status": "conflicting_evidence",
+        }
+
+    # --------------------------------------------------------------
     # Count independent evidence sources
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     evidence_sources = 0
 
@@ -162,9 +321,9 @@ def assess_evidence(state: dict) -> dict:
     if historical_context:
         evidence_sources += 1
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Evidence sufficient
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     if evidence_sources >= 2:
         return {
@@ -173,9 +332,9 @@ def assess_evidence(state: dict) -> dict:
             "investigation_status": "evidence_sufficient",
         }
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Evidence insufficient
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     return {
         "evidence_sufficient": False,
@@ -184,7 +343,9 @@ def assess_evidence(state: dict) -> dict:
     }
 
 
-def run_diagnosis(state: dict) -> dict:
+def run_diagnosis(
+    state: dict,
+) -> dict:
     """
     Run the diagnosis agent.
 
@@ -192,7 +353,9 @@ def run_diagnosis(state: dict) -> dict:
     """
 
     try:
-        diagnosis = diagnose_incident(state)
+        diagnosis = diagnose_incident(
+            state
+        )
 
         return {
             "diagnosis": diagnosis,
@@ -200,8 +363,12 @@ def run_diagnosis(state: dict) -> dict:
         }
 
     except Exception as exc:
-
-        errors = list(state.get("errors", []))
+        errors = list(
+            state.get(
+                "errors",
+                [],
+            )
+        )
 
         errors.append(
             "diagnose_incident failed: "
@@ -214,7 +381,9 @@ def run_diagnosis(state: dict) -> dict:
         }
 
 
-def run_remediation_planning(state: dict) -> dict:
+def run_remediation_planning(
+    state: dict,
+) -> dict:
     """
     Run the remediation planning agent.
 
@@ -230,16 +399,24 @@ def run_remediation_planning(state: dict) -> dict:
     """
 
     try:
-        remediation_plan = create_remediation_plan(state)
+        remediation_plan = create_remediation_plan(
+            state
+        )
 
         return {
             "remediation_plan": remediation_plan,
-            "investigation_status": "remediation_plan_completed",
+            "investigation_status": (
+                "remediation_plan_completed"
+            ),
         }
 
     except Exception as exc:
-
-        errors = list(state.get("errors", []))
+        errors = list(
+            state.get(
+                "errors",
+                [],
+            )
+        )
 
         errors.append(
             "create_remediation_plan failed: "
@@ -248,11 +425,15 @@ def run_remediation_planning(state: dict) -> dict:
 
         return {
             "errors": errors,
-            "investigation_status": "remediation_plan_failure",
+            "investigation_status": (
+                "remediation_plan_failure"
+            ),
         }
 
 
-def request_human_approval(state: dict) -> dict:
+def request_human_approval(
+    state: dict,
+) -> dict:
     """
     Human approval boundary.
 
@@ -262,6 +443,7 @@ def request_human_approval(state: dict) -> dict:
     interrupt mechanism.
 
     Resume value must contain:
+
         {
             "decision": "approved"
         }
@@ -274,7 +456,9 @@ def request_human_approval(state: dict) -> dict:
         }
     """
 
-    remediation_plan = state.get("remediation_plan")
+    remediation_plan = state.get(
+        "remediation_plan"
+    )
 
     if remediation_plan is None:
         message = (
@@ -286,14 +470,21 @@ def request_human_approval(state: dict) -> dict:
             "approval_status": "blocked",
             "approval_required": True,
             "approval_message": message,
-            "errors": list(state.get("errors", [])) + [message],
+            "errors": list(
+                state.get(
+                    "errors",
+                    [],
+                )
+            ) + [message],
         }
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Safety validation
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
-    for action in remediation_plan.recommended_actions:
+    for action in (
+        remediation_plan.recommended_actions
+    ):
         if action.requires_approval is not True:
             message = (
                 "Approval blocked because a remediation action "
@@ -304,26 +495,36 @@ def request_human_approval(state: dict) -> dict:
                 "approval_status": "blocked",
                 "approval_required": True,
                 "approval_message": message,
-                "errors": list(state.get("errors", [])) + [message],
+                "errors": list(
+                    state.get(
+                        "errors",
+                        [],
+                    )
+                ) + [message],
             }
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # If a decision was already supplied, preserve it.
     #
     # This is useful when the node is resumed.
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
-    existing_status = state.get("approval_status")
+    existing_status = state.get(
+        "approval_status"
+    )
 
-    if existing_status in {"approved", "rejected"}:
+    if existing_status in {
+        "approved",
+        "rejected",
+    }:
         return {
             "approval_status": existing_status,
             "approval_required": True,
         }
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Build human-readable approval request
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     approval_request = {
         "type": "human_approval_required",
@@ -332,32 +533,51 @@ def request_human_approval(state: dict) -> dict:
             "diagnosis, and remediation planning. Review the proposed "
             "remediation before allowing any ServiceNow write."
         ),
-        "incident_id": state["incident"].incident_id,
-        "service": state["incident"].service,
-        "severity": state["incident"].severity,
+        "incident_id": state[
+            "incident"
+        ].incident_id,
+        "service": state[
+            "incident"
+        ].service,
+        "severity": state[
+            "incident"
+        ].severity,
         "diagnosis": {
-            "root_cause": state["diagnosis"].likely_root_cause,
-            "confidence": state["diagnosis"].confidence,
-            "reasoning": state["diagnosis"].reasoning,
+            "root_cause": state[
+                "diagnosis"
+            ].likely_root_cause,
+            "confidence": state[
+                "diagnosis"
+            ].confidence,
+            "reasoning": state[
+                "diagnosis"
+            ].reasoning,
         },
-        "remediation_plan": remediation_plan.model_dump(),
+        "remediation_plan": (
+            remediation_plan.model_dump()
+        ),
         "allowed_decisions": [
             "approved",
             "rejected",
         ],
     }
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # PAUSE WORKFLOW
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
-    human_response = interrupt(approval_request)
+    human_response = interrupt(
+        approval_request
+    )
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Validate resume response
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
-    if not isinstance(human_response, dict):
+    if not isinstance(
+        human_response,
+        dict,
+    ):
         message = (
             "Invalid human approval response. Expected an object "
             "containing a decision."
@@ -367,18 +587,28 @@ def request_human_approval(state: dict) -> dict:
             "approval_status": "blocked",
             "approval_required": True,
             "approval_message": message,
-            "errors": list(state.get("errors", [])) + [message],
+            "errors": list(
+                state.get(
+                    "errors",
+                    [],
+                )
+            ) + [message],
         }
 
     decision = str(
-        human_response.get("decision", "")
+        human_response.get(
+            "decision",
+            "",
+        )
     ).strip().lower()
 
     if decision == "approved":
         return {
             "approval_status": "approved",
             "approval_required": True,
-            "approval_message": "Human approved the remediation plan.",
+            "approval_message": (
+                "Human approved the remediation plan."
+            ),
             "rejection_reason": "",
         }
 
@@ -393,7 +623,9 @@ def request_human_approval(state: dict) -> dict:
         return {
             "approval_status": "rejected",
             "approval_required": True,
-            "approval_message": "Human rejected the remediation plan.",
+            "approval_message": (
+                "Human rejected the remediation plan."
+            ),
             "rejection_reason": reason,
         }
 
@@ -405,11 +637,18 @@ def request_human_approval(state: dict) -> dict:
         "approval_status": "blocked",
         "approval_required": True,
         "approval_message": message,
-        "errors": list(state.get("errors", [])) + [message],
+        "errors": list(
+            state.get(
+                "errors",
+                [],
+            )
+        ) + [message],
     }
 
 
-def request_clarification(state: dict) -> dict:
+def request_clarification(
+    state: dict,
+) -> dict:
     """
     Produce a human-readable clarification message when
     investigation or reasoning cannot safely continue.
@@ -421,13 +660,16 @@ def request_clarification(state: dict) -> dict:
         "investigation_status"
     )
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Tool failure
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     if investigation_status == "tool_failure":
 
-        errors = state.get("errors", [])
+        errors = state.get(
+            "errors",
+            [],
+        )
 
         error_details = (
             "; ".join(errors)
@@ -446,9 +688,9 @@ def request_clarification(state: dict) -> dict:
             "are available."
         )
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Diagnosis failure
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     elif investigation_status == "diagnosis_failure":
 
@@ -460,11 +702,14 @@ def request_clarification(state: dict) -> dict:
             "availability and structured-output handling."
         )
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Remediation planning failure
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
-    elif investigation_status == "remediation_plan_failure":
+    elif (
+        investigation_status
+        == "remediation_plan_failure"
+    ):
 
         clarification_message = (
             f"The diagnosis for incident "
@@ -476,9 +721,9 @@ def request_clarification(state: dict) -> dict:
             "model availability and structured-output validation."
         )
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Approval blocked
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     elif investigation_status == "approval_blocked":
 
@@ -489,9 +734,9 @@ def request_clarification(state: dict) -> dict:
             "be performed."
         )
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
     # Approval rejected
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     elif investigation_status == "approval_rejected":
 
@@ -508,26 +753,87 @@ def request_clarification(state: dict) -> dict:
             "write should occur."
         )
 
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
+    # Conflicting evidence
+    # --------------------------------------------------------------
+
+    elif investigation_status == "conflicting_evidence":
+
+        logs_count = len(
+            state.get(
+                "logs",
+                [],
+            )
+        )
+
+        metrics_count = len(
+            state.get(
+                "metrics",
+                [],
+            )
+        )
+
+        runbooks_count = len(
+            state.get(
+                "runbooks",
+                [],
+            )
+        )
+
+        historical_count = len(
+            state.get(
+                "historical_context",
+                [],
+            )
+        )
+
+        clarification_message = (
+            f"Conflicting evidence was detected for incident "
+            f"{incident.incident_id} affecting "
+            f"{incident.service}. "
+            f"Investigation collected "
+            f"{logs_count} log records, "
+            f"{metrics_count} metric snapshots, "
+            f"{runbooks_count} relevant runbook matches, "
+            f"and {historical_count} historical incident matches. "
+            "The available evidence does not support confidently "
+            "selecting a single root cause. "
+            "Please provide additional context or investigation "
+            "data before proposing remediation."
+        )
+
+    # --------------------------------------------------------------
     # Insufficient evidence
-    # ---------------------------------------------------------
+    # --------------------------------------------------------------
 
     else:
 
         logs_count = len(
-            state.get("logs", [])
+            state.get(
+                "logs",
+                [],
+            )
         )
 
         metrics_count = len(
-            state.get("metrics", [])
+            state.get(
+                "metrics",
+                [],
+            )
         )
 
         runbooks_count = len(
-            state.get("runbooks", [])
+            state.get(
+                "runbooks",
+                [],
+            )
         )
 
         historical_count = len(
-            state.get("historical_context", [])
+            state.get(
+                "historical_context",
+                [],
+            )
         )
 
         clarification_message = (

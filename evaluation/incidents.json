@@ -1,0 +1,134 @@
+[
+  {
+    "incident_id": "INC-SIM-001",
+    "category": "database",
+    "expected_root_cause": "Database connection pool exhaustion",
+    "expected_action": "Investigate active database connections and pool utilization, address long-running transactions, and increase connection pool capacity only within database limits.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": true,
+      "evidence_sources": ["logs", "metrics", "runbook", "historical"],
+      "should_request_clarification": false
+    }
+  },
+  {
+    "incident_id": "INC-SIM-002",
+    "category": "cache_dependency",
+    "expected_root_cause": "Redis cache dependency failure",
+    "expected_action": "Investigate Redis health and connectivity, restore the cache dependency, and validate order-service error rates after recovery.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": true,
+      "evidence_sources": ["logs", "metrics", "runbook", "historical"],
+      "should_request_clarification": false
+    }
+  },
+  {
+    "incident_id": "INC-SIM-003",
+    "category": "external_dependency",
+    "expected_root_cause": "External payment gateway degradation",
+    "expected_action": "Validate payment gateway health and dependency errors, use the approved fallback or retry strategy, and monitor payment success rates.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": true,
+      "evidence_sources": ["logs", "metrics", "runbook", "historical"],
+      "should_request_clarification": false
+    }
+  },
+  {
+    "incident_id": "INC-SIM-004",
+    "category": "database",
+    "expected_root_cause": "Database latency affecting user-service requests",
+    "expected_action": "Investigate database latency and active queries, identify the source of slow queries, and validate database performance before making changes.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": true,
+      "evidence_sources": ["logs", "metrics", "runbook", "historical"],
+      "should_request_clarification": false
+    }
+  },
+  {
+    "incident_id": "INC-SIM-005",
+    "category": "downstream_dependency",
+    "expected_root_cause": "Downstream inventory dependency degradation",
+    "expected_action": "Investigate the downstream inventory dependency, verify its health and error responses, and restore or isolate the dependency according to the runbook.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": true,
+      "evidence_sources": ["logs", "metrics", "runbook", "historical"],
+      "should_request_clarification": false
+    }
+  },
+  {
+    "incident_id": "INC-SIM-006",
+    "category": "messaging",
+    "expected_root_cause": "Message queue backlog causing delayed notifications",
+    "expected_action": "Inspect message queue depth and consumer health, restore consumer capacity, and verify that the queue backlog is draining.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": true,
+      "evidence_sources": ["logs", "metrics", "runbook", "historical"],
+      "should_request_clarification": false
+    }
+  },
+  {
+    "incident_id": "INC-SIM-007",
+    "category": "search_dependency",
+    "expected_root_cause": "Search cluster health problem",
+    "expected_action": "Inspect search cluster health, identify unhealthy nodes or resource issues, and restore cluster health before validating search latency and errors.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": true,
+      "evidence_sources": ["logs", "metrics", "runbook", "historical"],
+      "should_request_clarification": false
+    }
+  },
+  {
+    "incident_id": "INC-SIM-008",
+    "category": "identity_dependency",
+    "expected_root_cause": "Identity or token dependency failure",
+    "expected_action": "Investigate identity-provider health and token validation failures, restore the dependency, and verify authentication success rates.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": true,
+      "evidence_sources": ["logs", "metrics", "runbook", "historical"],
+      "should_request_clarification": false
+    }
+  },
+  {
+    "incident_id": "INC-SIM-009",
+    "category": "resource_saturation",
+    "expected_root_cause": "CPU and memory saturation affecting recommendation-service performance",
+    "expected_action": "Investigate resource utilization, identify the workload causing saturation, scale or optimize the service through an approved change, and verify latency recovery.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": true,
+      "evidence_sources": ["logs", "metrics", "runbook", "historical"],
+      "should_request_clarification": false
+    }
+  },
+  {
+    "incident_id": "INC-SIM-010",
+    "category": "deployment_regression",
+    "expected_root_cause": "Configuration or deployment regression",
+    "expected_action": "Compare the current deployment configuration with the previous known-good version and roll back the regression through an approved change.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": true,
+      "evidence_sources": ["logs", "metrics", "runbook", "historical"],
+      "should_request_clarification": false
+    }
+  },
+  {
+    "incident_id": "INC-SIM-011",
+    "category": "insufficient_context",
+    "expected_root_cause": null,
+    "expected_action": "Request additional investigation context before committing to a root-cause diagnosis or remediation.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": false,
+      "evidence_sources": [],
+      "should_request_clarification": true
+    }
+  },
+  {
+    "incident_id": "INC-SIM-012",
+    "category": "conflicting_evidence",
+    "expected_root_cause": null,
+    "expected_action": "Report uncertainty, explain the conflicting evidence, and request additional context rather than executing an unsafe remediation.",
+    "evaluation_expectations": {
+      "diagnosis_should_be_confident": false,
+      "evidence_sources": ["logs", "metrics"],
+      "should_request_clarification": true
+    }
+  }
+]
