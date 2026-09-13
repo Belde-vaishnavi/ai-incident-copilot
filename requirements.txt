@@ -1,7 +1,6 @@
-langgraph
 langchain
 langchain-openai
+langgraph
 pydantic
 python-dotenv
 requests
-pytest
