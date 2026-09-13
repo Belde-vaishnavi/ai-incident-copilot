@@ -1,295 +1,323 @@
 # AI Incident Copilot
 
-AI Incident Copilot is a lightweight, production-minded incident investigation assistant for SRE workflows.
+A lightweight, production-minded AI Incident Copilot for SRE workflows.
 
-The system accepts an incident description, collects relevant evidence from simulated logs, metrics, runbooks, and historical incident context, reasons about a likely root cause, produces a structured remediation plan, and requires explicit human approval before creating or updating an incident in a ServiceNow Personal Developer Instance (PDI).
+The system accepts an incident description, investigates the incident using structured logs, metrics, runbooks, and historical incident context, reasons about a likely root cause, generates a structured remediation plan, and requires explicit human approval before performing ServiceNow writes.
 
-This project is being built as a structured agentic workflow rather than a simple chatbot.
+This project is implemented as an explicit agentic workflow rather than a simple chatbot.
 
-## Goals
+---
 
-- Investigate an incident using multiple typed tools.
-- Keep workflow state explicit and traceable.
-- Ground the diagnosis in collected evidence.
-- Produce a valid structured remediation plan.
-- Require human approval before every ServiceNow write.
-- Safely create or update ServiceNow incidents in a PDI.
-- Capture workflow and tool execution for observability.
-- Evaluate the system against repeatable incident scenarios.
+## 1. Project Overview
 
-## Assignment Scope
+The AI Incident Copilot demonstrates an agentic incident-response workflow with:
 
-The implementation follows the take-home assignment requirements:
+- Explicit LangGraph state and orchestration
+- Multiple typed investigation tools
+- Simulated operational data
+- Evidence-grounded diagnosis
+- Structured remediation planning
+- Human-in-the-loop approval
+- ServiceNow Personal Developer Instance (PDI) integration
+- Duplicate-prevention and safe ServiceNow writes
+- Bounded LLM retry handling
+- Observability and trace logging
+- Automated evaluation across 12 incident scenarios
 
-1. Accept an incident description.
-2. Fetch or simulate relevant logs and metrics.
-3. Consult simulated runbooks and historical incident context.
-4. Diagnose a likely root cause with confidence.
-5. Produce a structured remediation plan.
-6. Ask for human approval.
-7. If approved, create or update a ServiceNow incident.
-8. If rejected, revise the plan or ask for clarification.
-9. Record enough trace information to explain the workflow.
+The project intentionally uses simulated logs, metrics, runbooks, and historical incident context so that the take-home can be demonstrated without connecting to real production monitoring systems.
 
-## Architecture
+ServiceNow integration uses a Personal Developer Instance (PDI), not a production company tenant.
 
-The project uses an explicit LangGraph `StateGraph` workflow with typed/shared state.
+---
 
-```text
-SRE / User
-    |
-    v
-Incident Input
-    |
-    v
-LangGraph State
-    |
-    +--> Fetch Logs
-    +--> Fetch Metrics
-    +--> Search Runbooks
-    +--> Search Historical Incidents
-             |
-             v
-       Evidence Analysis
-             |
-             v
-      Context Sufficient?
-         /          \
-       No            Yes
-       |              |
-       v              v
-Ask Clarification  Diagnosis + Confidence
-                       |
-                       v
-                Remediation Plan
-                       |
-                       v
-                 Human Approval
-                   /          \
-               Reject        Approve
-                 |              |
-                 v              v
-           Revise/Clarify   ServiceNow
-                                |
-                                v
-                         Final Outcome
-                                |
-                                v
-                         Observability
-```
+## 2. Architecture
 
-## Design Principles
-
-- **Explicit state:** workflow data is represented in a typed state object.
-- **Single responsibility:** each graph node performs one clear responsibility.
-- **Deterministic orchestration:** LangGraph controls workflow transitions and branching.
-- **LLM reasoning behind a provider/configuration layer:** model selection is configuration-driven rather than hard-coded into workflow logic.
-- **Typed tools:** tools have narrow input/output schemas.
-- **Evidence grounding:** the model receives structured tool results rather than an unstructured dump of all data.
-- **Approval boundary:** ServiceNow side effects cannot execute without human approval.
-- **Validation and retry:** structured model output is validated before it is accepted.
-- **Auditability:** workflow runs, node execution, tool calls, latency, and final outcomes are recorded.
-
-## Project Structure
-
-The project is organized as a modular agentic application. LangGraph is responsible for workflow orchestration, while agents, tools, schemas, prompts, simulated data, and evaluation are kept as separate components.
+The system uses an explicit LangGraph `StateGraph`.
 
 ```text
-ServiceNow-Incident-Copilot/
-│
-├── app/
-│   ├── agents/
-│   │   ├── __init__.py
-│   │   ├── incident_investigation_agent.py
-│   │   ├── diagnosis_agent.py
-│   │   └── remediation_agent.py
-│   │
-│   ├── graph/
-│   │   ├── __init__.py
-│   │   ├── state.py
-│   │   ├── nodes.py
-│   │   ├── edges.py
-│   │   └── graph_builder.py
-│   │
-│   ├── models/
-│   │   ├── __init__.py
-│   │   ├── incident.py
-│   │   ├── investigation.py
-│   │   └── remediation.py
-│   │
-│   ├── tools/
-│   │   ├── __init__.py
-│   │   ├── runbook_tools.py
-│   │   ├── log_tools.py
-│   │   ├── metric_tools.py
-│   │   └── servicenow_tools.py
-│   │
-│   ├── data/
-│   │   ├── runbooks.json
-│   │   ├── logs.json
-│   │   ├── metrics.json
-│   │   └── historical_incidents.json
-│   │
-│   ├── prompts/
-│   │   ├── diagnosis_prompt.py
-│   │   └── remediation_prompt.py
-│   │
-│   ├── main.py
-│   └── __init__.py
-│
-├── evaluation/
-│   ├── incidents.json
-│   ├── evaluate.py
-│   └── evaluation_report.md
-│
-├── docs/
-│   ├── architecture.md
-│   └── design_notes.md
-│
-├── .env.example
-├── .gitignore
-├── README.md
-└── requirements.txt
+                         +----------------------+
+                         |      SRE / User      |
+                         +----------+-----------+
+                                    |
+                                    v
+                         +----------------------+
+                         |    Incident Input    |
+                         +----------+-----------+
+                                    |
+                                    v
+                         +----------------------+
+                         |    LangGraph State   |
+                         +----------+-----------+
+                                    |
+                                    v
+              +---------------------+---------------------+
+              |                     |                     |
+              v                     v                     v
+        +-----------+         +-----------+        +-------------+
+        |   Logs    |         |  Metrics  |        |  Runbooks   |
+        |   Tool    |         |   Tool    |        |    Tool     |
+        +-----------+         +-----------+        +-------------+
+              |                     |                     |
+              +---------------------+---------------------+
+                                    |
+                                    v
+                         +----------------------+
+                         | Historical Incidents |
+                         +----------+-----------+
+                                    |
+                                    v
+                         +----------------------+
+                         |  Evidence Analysis   |
+                         +----------+-----------+
+                                    |
+                         +----------+----------+
+                         |                     |
+                       Insufficient          Sufficient
+                       / Conflicting             |
+                         |                       v
+                         v             +-------------------+
+                +----------------+     |     Diagnosis     |
+                |  Clarification |     | + Confidence      |
+                +----------------+     +---------+---------+
+                                               |
+                                               v
+                                      +-------------------+
+                                      | Remediation Plan  |
+                                      +---------+---------+
+                                                |
+                                                v
+                                      +-------------------+
+                                      |  Human Approval   |
+                                      +---------+---------+
+                                                |
+                                  +-------------+-------------+
+                                  |                           |
+                               Rejected                    Approved
+                                  |                           |
+                                  v                           v
+                         +----------------+        +----------------------+
+                         | Revise/Clarify |        |     ServiceNow       |
+                         +----------------+        | Create / Update PDI  |
+                                                   +----------+-----------+
+                                                              |
+                                                              v
+                                                   +----------------------+
+                                                   |    Final Outcome     |
+                                                   +----------+-----------+
+                                                              |
+                                                              v
+                                                   +----------------------+
+                                                   |    Observability     |
+                                                   +----------------------+
 ```
 
-The structure will be created incrementally as each implementation phase is completed.
+---
 
-## Workflow
+## 3. Core Workflow
 
-The workflow will be implemented incrementally.
+### Step 1 — Incident Input
 
-### 1. Incident Input
+The workflow accepts:
 
-The system receives:
-
-- Incident description
+- Incident ID
 - Service
 - Severity
-- Investigation time window
+- Title
+- Description
+- Investigation start time
+- Investigation end time
 
-### 2. Context Collection
+### Step 2 — Investigation
 
-The workflow uses typed tools to collect:
+The investigation node collects structured context from:
 
 - Logs
 - Metrics
-- Runbook matches
-- Historical incident matches
+- Runbooks
+- Historical incidents
 
-### 3. Evidence Analysis
+Each source is represented using typed schemas.
 
-The collected results are normalized into structured evidence.
+The investigation data is kept in the shared LangGraph state.
 
-The workflow should distinguish:
+### Step 3 — Evidence Assessment
 
-- Observed evidence
-- Historical/runbook context
-- LLM inference
+The workflow evaluates whether the available evidence is sufficient.
 
-### 4. Diagnosis
+It distinguishes between:
 
-The LLM produces:
+- Sufficient evidence
+- Insufficient evidence
+- Conflicting evidence
+- Tool failures
+
+If evidence is insufficient or conflicting, the system does not force a diagnosis.
+
+Instead, it requests clarification.
+
+Tool failures use a bounded retry path before falling back to clarification.
+
+### Step 4 — Diagnosis
+
+The diagnosis agent receives structured investigation evidence and produces:
+
+- Likely root cause
+- Confidence score
+- Reasoning
+- Evidence references
+
+The diagnosis is constrained to available evidence.
+
+Additional validation checks:
+
+- Root cause must be non-empty
+- Reasoning must be non-empty
+- Evidence must reference available sources
+- Confidence must be between 0 and 1
+- Historical-only evidence cannot produce excessive confidence
+- Single-source diagnoses are confidence-limited
+- Multiple available current evidence sources should be represented where appropriate
+
+### Step 5 — Remediation Planning
+
+The remediation agent produces a structured JSON remediation plan containing:
 
 - Incident summary
 - Likely root cause
 - Confidence
-- Evidence references
-
-### 5. Remediation Plan
-
-The output includes:
-
+- Supporting evidence
 - Recommended actions
-- Risk
+- Risk for each action
 - Approval requirement
 - Rollback plan
 - ServiceNow update content
 
-### 6. Human Approval
+Every remediation action is required to have:
 
-The proposed action is presented to the human before any ServiceNow write.
+```text
+requires_approval = true
+```
 
-Rejected plans will not execute a ServiceNow write.
+The remediation output is validated using Pydantic schemas.
 
-The workflow will instead revise the plan or request additional context.
+Invalid structured output is handled through bounded retry logic.
 
-### 7. ServiceNow
+### Step 6 — Human Approval
 
-After approval, the workflow can:
+Before any ServiceNow side effect, the workflow reaches an explicit human approval boundary.
 
-- Create an incident
+The proposed remediation is presented to the human.
+
+Possible outcomes:
+
+```text
+Approved
+Rejected
+```
+
+A rejection does not result in a ServiceNow write.
+
+The workflow can instead revise the plan or request clarification.
+
+### Step 7 — ServiceNow
+
+After explicit approval, the system can interact with the ServiceNow PDI.
+
+Supported operations include:
+
+- Create incident
 - Read incident details
-- Update incident state/work notes
-- Attach the AI-generated triage/remediation information to work notes
+- Update incident state
+- Update work notes
+- Attach AI-generated triage/remediation information to work notes
 
-A ServiceNow Personal Developer Instance (PDI) will be used for the assignment. A real company ServiceNow tenant will not be used.
+ServiceNow writes are protected by:
 
-### 8. Final Outcome
+- Human approval
+- Input validation
+- Duplicate prevention
+- Idempotency handling
+- Structured success/error responses
+- Tool-call tracing
 
-The final result will contain:
+The automated evaluation intentionally stops at the approval boundary and does not resume the graph, so evaluation cannot accidentally perform a ServiceNow write.
 
-- Diagnosis
-- Confidence
-- Evidence
-- Proposed action
-- Approval status
-- ServiceNow execution status
-- ServiceNow incident ID when available
+---
 
-## Required Tools
-
-The implementation will provide these typed tools.
+## 4. Typed Tools
 
 ### `search_runbooks(query, service, severity)`
 
-Searches simulated runbook and historical incident context.
+Searches simulated runbooks and returns structured matches.
 
-Expected structured result includes:
+Example information:
 
-- Source ID
-- Snippet
-- Relevance reasoning
+```text
+source_id
+title
+snippet
+relevance_reasoning
+```
 
 ### `fetch_logs(service, start_time, end_time)`
 
-Returns simulated logs containing:
+Returns structured log records containing:
 
-- Timestamps
-- Errors
-- Request IDs
+```text
+timestamp
+service
+level
+message
+error
+request_id
+```
 
 ### `fetch_metrics(service, start_time, end_time)`
 
-Returns simulated metrics containing:
+Returns structured operational metrics including:
 
-- Latency
-- Error rate
-- CPU/memory
-- Dependency health
+```text
+timestamp
+latency_ms
+error_rate
+cpu_percent
+memory_percent
+dependency_health
+```
 
-### `create_servicenow_incident(title, description, severity, work_notes)`
+### Historical incident retrieval
+
+Retrieves relevant historical incident context from the simulated dataset.
+
+Historical incidents are treated as supporting context rather than definitive proof.
+
+### `create_servicenow_incident(...)`
 
 Creates an incident in the ServiceNow PDI.
 
-This is a side-effecting tool and requires human approval.
+This is a side-effecting operation and is protected by the human approval boundary.
 
-### `update_servicenow_incident(incident_id, state, work_notes)`
+### `update_servicenow_incident(...)`
 
-Updates an incident in the ServiceNow PDI.
+Updates a ServiceNow PDI incident with:
 
-This is a side-effecting tool and requires human approval.
+- State
+- Work notes
+- AI-generated investigation/remediation information
 
-## Structured Remediation Output
+This is also protected by the approval boundary.
 
-The remediation plan will be validated as JSON using a typed schema.
+---
 
-Planned shape:
+## 5. Structured Remediation Schema
+
+The remediation plan follows a typed structure similar to:
 
 ```json
 {
   "incident_summary": "string",
   "likely_root_cause": "string",
-  "confidence": 0.0,
+  "confidence": 0.95,
   "evidence": [
     {
       "source": "logs",
@@ -299,220 +327,766 @@ Planned shape:
   "recommended_actions": [
     {
       "action": "string",
-      "risk": "low|medium|high",
+      "risk": "medium",
       "requires_approval": true
     }
   ],
   "rollback_plan": "string",
   "servicenow_update": {
     "short_description": "string",
-    "severity": "string",
+    "severity": "P1",
     "work_notes": "string"
   }
 }
 ```
 
-Invalid structured output will be rejected and handled through the workflow's retry/recovery path.
+The output is validated before being accepted by the workflow.
 
-## Safety Model
+---
 
-ServiceNow writes are treated as side effects.
+## 6. Safety Model
 
-### Required Protections
+ServiceNow is treated as a side-effecting external system.
 
-- Human approval before every ServiceNow write.
-- Input validation.
-- Idempotency or duplicate-prevention strategy.
-- Structured success/error responses.
-- Tool-call logging.
-- Sensitive-value redaction.
-- Credentials stored only through environment variables.
-- No ServiceNow credentials or API keys committed to Git.
+The application therefore separates:
 
-### Insufficient Context
+```text
+Reasoning
+    |
+    v
+Recommendation
+    |
+    v
+Human Approval
+    |
+    v
+ServiceNow Side Effect
+```
 
-The system should not invent a diagnosis when evidence is insufficient.
+The LLM does not directly decide whether to execute a ServiceNow write.
 
-Instead, it should ask for additional context or clearly report that it cannot safely recommend an action.
+### Safety controls
 
-## Configuration
+- Human approval before every ServiceNow write
+- Typed tool inputs and outputs
+- Input validation
+- Bounded retry logic
+- Duplicate prevention
+- Idempotency support
+- Structured errors
+- Sensitive-value redaction in traces
+- Credentials stored in environment variables
+- `.env` excluded from Git
+- Automated evaluation stops before ServiceNow execution
+- No remediation execution without explicit approval
 
-LLM and ServiceNow configuration will be environment-driven.
+---
 
-Create a local `.env` file based on `.env.example`.
+## 7. Simulated Data
 
-Example variables:
+The project includes realistic simulated SRE scenarios.
+
+The dataset covers:
+
+1. Database connection pool exhaustion
+2. Redis/cache dependency failure
+3. External payment gateway degradation
+4. Database latency
+5. Downstream inventory dependency degradation
+6. Message queue backlog
+7. Search cluster degradation
+8. Identity provider failure
+9. CPU/memory saturation
+10. Deployment configuration regression
+11. Insufficient context
+12. Conflicting evidence
+
+The simulated data allows the workflow to be evaluated repeatably without requiring production monitoring access.
+
+---
+
+## 8. Project Structure
+
+```text
+ServiceNow-Incident-Copilot/
+│
+├── app/
+│   ├── agents/
+│   │   ├── __init__.py
+│   │   ├── diagnosis_agent.py
+│   │   └── remediation_agent.py
+│   │
+│   ├── graph/
+│   │   ├── __init__.py
+│   │   ├── state.py
+│   │   ├── nodes.py
+│   │   ├── edges.py
+│   │   ├── graph_builder.py
+│   │   └── servicenow_node.py
+│   │
+│   ├── models/
+│   │   ├── __init__.py
+│   │   ├── incident.py
+│   │   ├── investigation.py
+│   │   ├── diagnosis.py
+│   │   ├── remediation.py
+│   │   └── servicenow.py
+│   │
+│   ├── tools/
+│   │   ├── __init__.py
+│   │   ├── runbook_tools.py
+│   │   ├── log_tools.py
+│   │   ├── metric_tools.py
+│   │   ├── historical_tools.py
+│   │   └── servicenow_tools.py
+│   │
+│   ├── data/
+│   │   ├── incidents.json
+│   │   ├── logs.json
+│   │   ├── metrics.json
+│   │   ├── runbooks.json
+│   │   └── historical_incidents.json
+│   │
+│   ├── prompts/
+│   │   ├── diagnosis_prompt.py
+│   │   └── remediation_prompt.py
+│   │
+│   ├── llm/
+│   │   └── provider.py
+│   │
+│   ├── observability/
+│   │   ├── context.py
+│   │   └── tracer.py
+│   │
+│   └── main.py
+│
+├── evaluation/
+│   ├── incidents.json
+│   ├── evaluate.py
+│   ├── evaluation_results.json
+│   └── evaluation_report.md
+│
+├── docs/
+│   ├── architecture.md
+│   └── design_notes.md
+│
+├── tests/
+│   └── test_graph.py
+│
+├── .env.example
+├── .gitignore
+├── README.md
+└── requirements.txt
+```
+
+---
+
+## 9. Configuration
+
+All LLM and ServiceNow configuration is externalized through environment variables.
+
+Create a local `.env` file in the project root.
+
+Example:
 
 ```env
-LLM_PROVIDER=
-OPENAI_API_KEY=
-OPENAI_BASE_URL=
-OPENAI_MODEL=
-OPENAI_API_VERSION=
+API_KEY=
+
+GROK_MODEL=
+GROK_BASE_URL=
 
 SERVICENOW_INSTANCE=
 SERVICENOW_USERNAME=
 SERVICENOW_PASSWORD=
 ```
 
-Only `.env.example` is committed to Git. Secrets must never be committed.
+The project currently uses:
 
-## Local Setup
+```text
+API_KEY
+GROK_MODEL
+GROK_BASE_URL
+SERVICENOW_INSTANCE
+SERVICENOW_USERNAME
+SERVICENOW_PASSWORD
+```
 
-Create the virtual environment:
+The model is configuration-driven and does not need to be supplied on every execution command.
+
+The `.env` file must never be committed to Git.
+
+Use `.env.example` as the safe configuration template.
+
+---
+
+## 10. Local Setup
+
+### Create virtual environment
 
 ```bash
 python -m venv .venv
 ```
 
-Windows:
+### Windows activation
 
 ```powershell
 .venv\Scripts\activate
 ```
 
-Install dependencies:
+### Install dependencies
 
 ```bash
 pip install -r requirements.txt
 ```
 
-Configure environment variables:
+### Configure environment
+
+Copy:
 
 ```text
-Copy .env.example to .env and fill in the required values.
+.env.example
 ```
 
-Run the application:
+to:
+
+```text
+.env
+```
+
+Then fill in the required values.
+
+---
+
+## 11. Run the Application
+
+After configuring `.env`:
 
 ```bash
 python -m app.main
 ```
 
-## Evaluation
+The application investigates the configured incident and displays the diagnosis and remediation plan.
 
-At least 10 realistic incident scenarios will be executed.
+For a normal incident, the workflow stops at:
 
-The evaluation will measure:
+```text
+Approve remediation? [y/n]:
+```
 
-1. Diagnosis accuracy
-2. Relevant context selection and citation
-3. Reasonableness of recommended action
-4. ServiceNow create/update success
-5. Average latency
-6. Failure cases
-7. Correct clarification behavior when evidence is insufficient
+A ServiceNow write occurs only when the human explicitly approves.
 
-Two configurations will also be compared.
+---
 
-The initial comparison will use:
+## 12. ServiceNow PDI
 
-- **Configuration A:** single-pass reasoning
-- **Configuration B:** reasoning with reflection/retry
+The project uses a ServiceNow Personal Developer Instance.
 
-The exact configuration and results will be documented after implementation.
+Required environment variables:
 
-## Observability
+```env
+SERVICENOW_INSTANCE=
+SERVICENOW_USERNAME=
+SERVICENOW_PASSWORD=
+```
 
-Each workflow run will have a run ID.
+The application supports:
 
-The system will capture, where available:
+```text
+Create incident
+Read incident
+Update incident
+Update work notes
+```
+
+The AI-generated investigation and remediation summary can be written into ServiceNow work notes after approval.
+
+A real company ServiceNow tenant is not required for this project.
+
+---
+
+## 13. Evaluation
+
+The evaluation suite contains 12 realistic scenarios.
+
+Run the full evaluation in controlled batches.
+
+### First batch
+
+```powershell
+python evaluation\evaluate.py --start 0 --limit 3 --reset
+```
+
+### Second batch
+
+```powershell
+python evaluation\evaluate.py --start 3 --limit 3
+```
+
+### Third batch
+
+```powershell
+python evaluation\evaluate.py --start 6 --limit 3
+```
+
+### Fourth batch
+
+```powershell
+python evaluation\evaluate.py --start 9 --limit 3
+```
+
+The evaluator accumulates results in:
+
+```text
+evaluation/evaluation_results.json
+```
+
+The automated evaluator stops at the human approval boundary.
+
+Therefore:
+
+```text
+ServiceNow writes = disabled during automated evaluation
+```
+
+---
+
+## 14. Final Evaluation Results
+
+The final evaluation was executed using:
+
+```text
+Model:
+openai/gpt-oss-20b
+```
+
+Results:
+
+| Metric | Result |
+|---|---:|
+| Total scenarios | 12 |
+| Passed | 11 |
+| Failed | 1 |
+| Overall pass rate | **91.7%** |
+| Diagnosis accuracy | **100%** |
+| Evidence grounding | **90%** |
+| Action reasonableness | **100%** |
+| Clarification accuracy | **100%** |
+| Clarification safety | **100%** |
+| Approval safety | **100%** |
+| Provider-related failures | **0** |
+| Average latency | **22,958.07 ms** |
+
+### Failed case
+
+```text
+INC-SIM-007
+```
+
+The system correctly diagnosed the search cluster problem, but the diagnosis did not cite the available runbook.
+
+Therefore the case was classified as:
+
+```text
+evidence_grounding
+```
+
+rather than a diagnosis failure.
+
+This demonstrates that the evaluation separately measures:
+
+```text
+Diagnosis correctness
+        +
+Evidence traceability
+```
+
+instead of treating them as the same metric.
+
+See:
+
+```text
+evaluation/evaluation_report.md
+```
+
+for the detailed evaluation and failure analysis.
+
+---
+
+## 15. Uncertainty and Clarification
+
+The system is designed not to force a diagnosis when evidence is insufficient or contradictory.
+
+### INC-SIM-011
+
+Insufficient evidence caused the workflow to request clarification.
+
+The system produced:
+
+```text
+No diagnosis
+No remediation
+Clarification requested
+No ServiceNow write
+```
+
+### INC-SIM-012
+
+Conflicting evidence caused the workflow to request clarification instead of choosing an unsupported root cause.
+
+The system produced:
+
+```text
+No diagnosis
+No remediation
+Clarification requested
+No ServiceNow write
+```
+
+Both scenarios passed the clarification and safety evaluation.
+
+---
+
+## 16. Observability
+
+Each workflow run receives a run ID.
+
+The tracing layer captures information such as:
 
 - Run ID
 - Node execution
-- Tool inputs/outputs
+- Tool calls
+- Tool inputs
+- Tool outputs
 - Redacted sensitive values
-- Step/tool latency
-- Model name
-- Token usage
-- Diagnosis
-- Confidence
-- ServiceNow incident ID
-- Success/failure information
+- Node latency
+- Tool latency
+- Errors
+- Retry behavior
+- Approval state
+- Final outcome
+- ServiceNow operation information when applicable
 
-LangSmith may be added after the baseline observability is working.
-
-## Git Development Strategy
-
-The project will be developed incrementally.
-
-Planned commit progression:
+Trace files are written locally under:
 
 ```text
-1. Project scaffold, README outline, dependency setup
-2. Simulated incident, logs, metrics, runbook and historical data
-3. Typed tool schemas for context collection and ServiceNow
-4. LangGraph workflow with state and branching
-5. Human approval gate before ServiceNow writes
-6. ServiceNow PDI create/read/update integration
-7. Observability/logging/LangSmith tracing
-8. Evaluation harness and 10 sample incident results
-9. Final documentation, architecture diagram and limitations
+traces/
 ```
 
-Commit messages should describe the intent of each change.
+The directory is excluded from Git because traces may contain operational information.
 
-## Current Implementation Status
+The implementation is structured so that richer observability systems such as LangSmith can be added later.
+
+---
+
+## 17. Error Handling and Reliability
+
+The application includes bounded retry behavior for transient LLM/provider failures.
+
+Examples include:
+
+```text
+Rate-limit retry
+Structured-output retry
+Transient provider failure
+```
+
+Retry attempts are bounded to avoid infinite loops.
+
+Daily-token/quota failures are treated differently from transient rate limits because repeatedly retrying a daily quota failure does not improve the outcome.
+
+Tool failures are represented in workflow state and can route the graph toward retry or clarification.
+
+---
+
+## 18. Duplicate Prevention and Idempotency
+
+ServiceNow writes are treated as potentially repeatable side effects.
+
+The ServiceNow integration therefore includes duplicate-prevention handling.
+
+If a create operation is detected as a duplicate, the workflow does not falsely report that a new incident was created.
+
+Instead, the result records that duplicate creation was prevented.
+
+This distinction is important for operational auditability.
+
+---
+
+## 19. Testing
+
+The project includes graph-level tests covering:
+
+### Normal incident
+
+A normal incident should progress through diagnosis and remediation planning and stop at the approval boundary.
+
+### Insufficient evidence
+
+An insufficient-context incident should request clarification without producing a diagnosis or remediation plan.
+
+### Conflicting evidence
+
+A conflicting-evidence incident should request clarification and should not claim a root cause.
+
+Run:
+
+```powershell
+pytest -q
+```
+
+Expected result:
+
+```text
+3 passed
+```
+
+Compilation can be verified with:
+
+```powershell
+python -m compileall app evaluation tests
+```
+
+---
+
+## 20. Design Decisions
+
+### Why LangGraph?
+
+LangGraph provides explicit workflow state and conditional transitions.
+
+This makes it easier to represent:
+
+- Investigation
+- Evidence assessment
+- Diagnosis
+- Remediation
+- Approval
+- Clarification
+- Retry
+- Failure handling
+
+The workflow is therefore deterministic at the orchestration layer even though the LLM is responsible for reasoning.
+
+### Why separate diagnosis and remediation?
+
+Diagnosis answers:
+
+```text
+What is most likely happening?
+```
+
+Remediation answers:
+
+```text
+What should we do about it?
+```
+
+Separating them makes validation and safety controls clearer.
+
+### Why structured outputs?
+
+Structured Pydantic models make it possible to validate:
+
+- Required fields
+- Confidence range
+- Evidence references
+- Approval requirements
+- ServiceNow fields
+- Rollback information
+
+This is safer than relying on free-form LLM text.
+
+### Why human approval?
+
+ServiceNow writes are external side effects.
+
+The LLM can recommend an action, but it should not independently execute an operational change.
+
+Therefore:
+
+```text
+LLM recommendation
+        |
+        v
+Human approval
+        |
+        v
+ServiceNow write
+```
+
+---
+
+## 21. Production Gaps
+
+This is a take-home V1 rather than a production SRE platform.
+
+A production deployment would require:
+
+### Real observability integrations
+
+Replace simulated data with controlled integrations for:
+
+- Logs
+- Metrics
+- Traces
+- Deployment events
+- Dependency health
+
+### Production retrieval
+
+Use a proper retrieval system for:
+
+- Runbooks
+- Historical incidents
+- Service ownership
+- Architecture documentation
+
+### Security
+
+Use:
+
+- Managed secrets
+- Short-lived credentials
+- Least-privilege ServiceNow accounts
+- Role-based authorization
+- Audit controls
+
+### Approval controls
+
+Production approval should capture:
+
+- Approver identity
+- Timestamp
+- Proposed action
+- Risk
+- Rollback plan
+- Authorization policy
+
+### Reliability
+
+Additional controls should include:
+
+- Timeouts
+- Circuit breakers
+- Provider fallback
+- Rate-limit management
+- Better latency optimization
+- Distributed tracing
+- Metrics dashboards
+
+---
+
+## 22. Known Limitations
+
+The current project intentionally uses:
+
+- Simulated logs
+- Simulated metrics
+- Simulated runbooks
+- Simulated historical incidents
+- ServiceNow PDI instead of an enterprise production instance
+
+The system does not automatically execute arbitrary infrastructure remediation.
+
+The take-home focuses on demonstrating:
+
+```text
+Agentic reasoning
++
+Tool use
++
+Workflow orchestration
++
+Safety
++
+Human approval
++
+ServiceNow integration
++
+Observability
++
+Evaluation
+```
+
+---
+
+## 23. Future Improvements
+
+With additional development time, the system could be extended with:
+
+- MCP-based tool servers
+- LangSmith tracing
+- Real observability integrations
+- RAG for runbooks and incident history
+- Multi-model evaluation
+- Confidence-based escalation
+- Streaming operator UI
+- Role-based approval policies
+- Cost tracking
+- Kubernetes remediation tools
+- Automated postmortem generation
+- CI/CD evaluation gates
+
+---
+
+## 24. Interview / Design Summary
+
+The core design can be summarized as:
+
+```text
+Investigate
+    ↓
+Collect evidence
+    ↓
+Assess evidence quality
+    ↓
+ ┌──────────────────────────────┐
+ │                              │
+Insufficient                 Sufficient
+ │                              │
+ ↓                              ↓
+Clarify                     Diagnose
+                               ↓
+                         Remediation
+                               ↓
+                         Human Approval
+                          /           \
+                       Reject        Approve
+                         |             |
+                         ↓             ↓
+                    Clarify       ServiceNow
+                                      ↓
+                                Final Outcome
+```
+
+The key principle is:
+
+> The LLM performs reasoning and recommendation, while the workflow controls state, validation, branching, approval, and external side effects.
+
+---
+
+## 25. Final Status
 
 | Area | Status |
 |---|---|
 | Project scaffold | Complete |
-| Simulated data | Not started |
-| Typed tools | Not started |
-| LangGraph workflow | Not started |
-| Structured diagnosis | Not started |
-| Human approval | Not started |
-| ServiceNow PDI | Not started |
-| Observability | Not started |
-| Evaluation | Not started |
-| Documentation | Initial README |
+| Simulated incident data | Complete |
+| Typed investigation tools | Complete |
+| Typed ServiceNow tools | Complete |
+| LangGraph workflow | Complete |
+| Evidence assessment | Complete |
+| Diagnosis agent | Complete |
+| Remediation agent | Complete |
+| Human approval | Complete |
+| ServiceNow PDI integration | Complete |
+| Duplicate prevention | Complete |
+| Retry/error handling | Complete |
+| Observability | Complete |
+| Evaluation harness | Complete |
+| 12 scenario evaluation | Complete |
+| Evaluation report | Complete |
+| Automated tests | Passing |
+| Documentation | Complete |
 
-## Known Limitations
 
-The following areas are intentionally planned as lightweight/mock components for the initial version:
 
-- Incident logs, metrics, runbooks, and historical context are simulated/local data.
-- The application is intended as a take-home V1, not a complete production SRE platform.
-- Remediation execution outside ServiceNow is not part of the required baseline.
-- Production deployment, enterprise authentication/authorization, and full operational infrastructure are outside the initial scope.
-
-Additional limitations will be documented after implementation.
-
-## Stretch Goals
-
-Only after all required functionality works:
-
-- Actual MCP server for ServiceNow and simulated context tools
-- LangSmith named traces
-- Confidence-based retry or clarification flow
-- Multi-model comparison
-- Streamlit UI
-- Dockerized deployment
-- CI checks
-- Simulated Kubernetes remediation tool
-- Role-based approval policy
-- Incident postmortem generator
-
-## Final Design Questions
-
-The final submission will explicitly answer:
-
-1. What part is production-ready?
-2. What part is intentionally mocked?
-3. What would be improved with one more week?
-4. What was the hardest design tradeoff?
-5. What are the biggest risks if deployed for real SREs?
-
-## Development Approach
-
-This repository is intentionally developed phase-by-phase.
-
-Each phase will be:
-
-1. Implemented
-2. Tested
-3. Verified
-4. Committed with a descriptive Git message
-5. Followed by the next phase
-
-The goal is to demonstrate engineering decisions and incremental development, not only the final output.

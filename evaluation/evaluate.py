@@ -1,39 +1,36 @@
 """
-Evaluation runner for the ServiceNow Incident Copilot.
-
-This evaluator:
-- loads the evaluation scenarios
-- loads the corresponding simulated incidents
-- runs the LangGraph workflow
-- stops safely at the human approval boundary
-- evaluates diagnosis, evidence grounding, remediation,
-  clarification behavior, safety, and latency
-- never approves a remediation plan
-- never performs a ServiceNow write
-
-The evaluation is intentionally separate from the normal interactive
-application so that running the evaluation cannot create/update
-ServiceNow incidents.
-
-Scoring is deterministic and transparent:
-- exact normalized token overlap is retained
-- concept/alias matching improves semantic robustness
-- no second LLM is used as an evaluator
+Safe, batched evaluation runner for the ServiceNow Incident Copilot.
 """
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
 import re
+import sys
 import time
 from pathlib import Path
 from typing import Any
+
+
+# ---------------------------------------------------------------------------
+# Project import setup
+# ---------------------------------------------------------------------------
+
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
+
 
 from app.graph.graph_builder import build_investigation_graph
 from app.models.incident import Incident
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+# ---------------------------------------------------------------------------
+# Paths
+# ---------------------------------------------------------------------------
 
 EVALUATION_FILE = (
     PROJECT_ROOT
@@ -48,149 +45,22 @@ INCIDENT_DATA_FILE = (
     / "incidents.json"
 )
 
+RESULTS_FILE = (
+    PROJECT_ROOT
+    / "evaluation"
+    / "evaluation_results.json"
+)
+
 
 # ---------------------------------------------------------------------------
-# Deterministic semantic aliases
-# ---------------------------------------------------------------------------
-#
-# These aliases make the evaluator tolerant of reasonable wording
-# differences while remaining transparent and deterministic.
-#
-# Example:
-#   "identity provider failure"
-#   "authentication dependency failure"
-#
-# can both contribute to the same concept.
-#
-# This is NOT an LLM-based semantic grader.
+# JSON helpers
 # ---------------------------------------------------------------------------
 
-CONCEPT_ALIASES: dict[str, set[str]] = {
-    "database": {
-        "database",
-        "db",
-        "database connection",
-        "db connection",
-        "database latency",
-        "db latency",
-        "connection pool",
-        "connection pool exhaustion",
-        "pool exhaustion",
-    },
-    "connection_pool_exhaustion": {
-        "connection pool exhaustion",
-        "connection pool exhausted",
-        "db connection pool exhaustion",
-        "database connection pool exhaustion",
-        "pool exhaustion",
-        "connection pool saturation",
-    },
-    "redis_cache": {
-        "redis",
-        "cache",
-        "redis cache",
-        "cache dependency",
-        "cache failure",
-        "cache outage",
-    },
-    "payment_gateway": {
-        "payment gateway",
-        "external payment gateway",
-        "external gateway",
-        "payment provider",
-        "external payment provider",
-        "gateway degradation",
-        "gateway failure",
-        "payment gateway degradation",
-    },
-    "downstream_dependency": {
-        "downstream dependency",
-        "downstream service",
-        "dependency failure",
-        "dependency degradation",
-        "dependent service",
-        "external dependency",
-    },
-    "identity_dependency": {
-        "identity provider",
-        "identity dependency",
-        "authentication dependency",
-        "auth dependency",
-        "token dependency",
-        "authentication provider",
-        "identity service",
-        "authentication service",
-        "token service",
-    },
-    "message_queue": {
-        "message queue",
-        "mq",
-        "queue",
-        "queue backlog",
-        "message backlog",
-        "messaging backlog",
-        "mq backlog",
-    },
-    "search_cluster": {
-        "search cluster",
-        "search service",
-        "search cluster health",
-        "search cluster degradation",
-        "search infrastructure",
-    },
-    "cpu_memory_saturation": {
-        "cpu saturation",
-        "memory saturation",
-        "cpu memory saturation",
-        "resource saturation",
-        "resource pressure",
-        "high cpu",
-        "high memory",
-    },
-    "configuration_regression": {
-        "configuration regression",
-        "config regression",
-        "configuration error",
-        "config error",
-        "deployment regression",
-        "deployment configuration",
-        "bad configuration",
-    },
-    "latency": {
-        "latency",
-        "slow",
-        "slow response",
-        "slow requests",
-        "response latency",
-        "high latency",
-    },
-    "error_rate": {
-        "error rate",
-        "errors",
-        "5xx",
-        "500",
-        "failure rate",
-        "request failures",
-    },
-    "timeout": {
-        "timeout",
-        "timeouts",
-        "request timeout",
-        "payment timeout",
-        "connection timeout",
-    },
-    "rollback": {
-        "rollback",
-        "roll back",
-        "revert",
-        "revert deployment",
-        "restore previous version",
-    },
-}
-
-
-def load_json(path: Path) -> Any:
+def load_json(
+    path: Path,
+) -> Any:
     """Load JSON from a project file."""
+
     with path.open(
         "r",
         encoding="utf-8",
@@ -198,10 +68,34 @@ def load_json(path: Path) -> Any:
         return json.load(file)
 
 
+def save_json(
+    path: Path,
+    value: Any,
+) -> None:
+    """Write JSON to a project file."""
+
+    with path.open(
+        "w",
+        encoding="utf-8",
+    ) as file:
+        json.dump(
+            value,
+            file,
+            indent=2,
+            ensure_ascii=False,
+            default=str,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Text normalization and deterministic evaluation
+# ---------------------------------------------------------------------------
+
 def normalize_text(
     value: str | None,
 ) -> str:
     """Normalize text for deterministic comparison."""
+
     if not value:
         return ""
 
@@ -226,6 +120,7 @@ def token_set(
     value: str | None,
 ) -> set[str]:
     """Return normalized tokens."""
+
     return set(
         normalize_text(value).split()
     )
@@ -236,34 +131,107 @@ def token_overlap(
     expected: str | None,
 ) -> float:
     """
-    Calculate exact normalized token overlap.
+    Calculate transparent deterministic token overlap.
 
-    This metric is intentionally retained as a transparent baseline.
+    This intentionally does not use another LLM as a grader.
     """
-    actual_tokens = token_set(actual)
-    expected_tokens = token_set(expected)
+
+    actual_tokens = token_set(
+        actual
+    )
+
+    expected_tokens = token_set(
+        expected
+    )
 
     if not expected_tokens:
         return 0.0
 
     return (
-        len(actual_tokens & expected_tokens)
+        len(
+            actual_tokens
+            & expected_tokens
+        )
         / len(expected_tokens)
     )
 
 
-def _contains_phrase(
-    text: str,
-    phrase: str,
-) -> bool:
-    """Check whether a normalized phrase exists in normalized text."""
-    normalized_text = normalize_text(text)
-    normalized_phrase = normalize_text(phrase)
+# ---------------------------------------------------------------------------
+# Semantic concept aliases
+# ---------------------------------------------------------------------------
 
-    if not normalized_text or not normalized_phrase:
-        return False
-
-    return normalized_phrase in normalized_text
+CONCEPT_ALIASES: dict[
+    str,
+    set[str],
+] = {
+    "connection_pool_exhaustion": {
+        "connection pool exhaustion",
+        "connection pool",
+        "db pool exhausted",
+        "database connections exhausted",
+        "pool exhaustion",
+        "db connection exhaustion",
+    },
+    "redis_cache": {
+        "redis",
+        "cache dependency",
+        "redis cache",
+        "cache failure",
+    },
+    "payment_gateway": {
+        "payment gateway",
+        "external payment gateway",
+        "gateway degradation",
+    },
+    "database": {
+        "database",
+        "db",
+        "database latency",
+        "db latency",
+        "query latency",
+    },
+    "latency": {
+        "latency",
+        "slow requests",
+        "slow response",
+        "response time",
+    },
+    "downstream_dependency": {
+        "downstream dependency",
+        "downstream service",
+        "warehouse dependency",
+    },
+    "message_queue": {
+        "message queue",
+        "queue backlog",
+        "mq backlog",
+        "consumer backlog",
+    },
+    "search_cluster": {
+        "search cluster",
+        "cluster health",
+        "shard",
+        "search node",
+    },
+    "identity_dependency": {
+        "identity provider",
+        "identity dependency",
+        "token validation",
+        "auth provider",
+    },
+    "cpu_memory_saturation": {
+        "cpu",
+        "memory",
+        "resource saturation",
+        "cpu memory saturation",
+    },
+    "configuration_regression": {
+        "configuration regression",
+        "config regression",
+        "deployment regression",
+        "bad deployment",
+    },
+}
 
 
 def matched_concepts(
@@ -271,74 +239,74 @@ def matched_concepts(
     expected: str | None,
 ) -> list[str]:
     """
-    Return deterministic concepts represented by both actual and expected text.
-
-    A concept is counted only when:
-    - the expected text expresses the concept, and
-    - the actual text expresses the same concept.
-
-    This makes scoring tolerant to wording differences without using
-    an LLM-based judge.
+    Find semantic concepts shared by actual and expected root causes.
     """
-    actual_text = normalize_text(actual)
-    expected_text = normalize_text(expected)
+
+    actual_text = normalize_text(
+        actual
+    )
+
+    expected_text = normalize_text(
+        expected
+    )
 
     if not actual_text or not expected_text:
         return []
 
-    matches: list[str] = []
+    concepts: list[str] = []
 
-    for concept, aliases in CONCEPT_ALIASES.items():
-        expected_has_concept = any(
-            _contains_phrase(
-                expected_text,
-                alias,
-            )
+    for (
+        concept,
+        aliases,
+    ) in CONCEPT_ALIASES.items():
+
+        expected_match = any(
+            alias in expected_text
             for alias in aliases
         )
 
-        actual_has_concept = any(
-            _contains_phrase(
-                actual_text,
-                alias,
-            )
+        actual_match = any(
+            alias in actual_text
             for alias in aliases
         )
 
-        if expected_has_concept and actual_has_concept:
-            matches.append(concept)
+        if (
+            expected_match
+            and actual_match
+        ):
+            concepts.append(
+                concept
+            )
 
-    return sorted(matches)
+    return sorted(
+        concepts
+    )
 
 
 def concept_overlap(
     actual: str | None,
     expected: str | None,
 ) -> float:
-    """
-    Calculate deterministic concept overlap.
+    """Calculate deterministic semantic concept overlap."""
 
-    If the expected text contains recognized domain concepts, score based
-    on how many of those concepts are also represented by the actual text.
-
-    If no concepts are recognized, fall back to exact token overlap.
-    """
-    expected_text = normalize_text(expected)
+    expected_text = normalize_text(
+        expected
+    )
 
     if not expected_text:
         return 0.0
 
-    expected_concepts: set[str] = set()
-
-    for concept, aliases in CONCEPT_ALIASES.items():
+    expected_concepts = {
+        concept
+        for (
+            concept,
+            aliases,
+        ) in CONCEPT_ALIASES.items()
         if any(
-            _contains_phrase(
-                expected_text,
-                alias,
-            )
+            alias in expected_text
             for alias in aliases
-        ):
-            expected_concepts.add(concept)
+        )
+    }
 
     if not expected_concepts:
         return token_overlap(
@@ -346,15 +314,15 @@ def concept_overlap(
             expected,
         )
 
-    actual_concepts = set(
-        matched_concepts(
-            actual,
-            expected,
-        )
-    )
-
     return (
-        len(actual_concepts & expected_concepts)
+        len(
+            set(
+                matched_concepts(
+                    actual,
+                    expected,
+                )
+            )
+        )
         / len(expected_concepts)
     )
 
@@ -362,128 +330,39 @@ def concept_overlap(
 def combined_similarity(
     actual: str | None,
     expected: str | None,
-) -> dict[str, Any]:
+) -> float:
     """
-    Return both literal and deterministic concept-based similarity.
-
-    The concept score is primary when recognized concepts are available.
-    The token score remains visible for transparency.
+    Use the stronger of token and semantic concept matching.
     """
-    literal = token_overlap(
-        actual,
-        expected,
-    )
 
-    concept = concept_overlap(
-        actual,
-        expected,
-    )
-
-    return {
-        "token_overlap": round(
-            literal,
-            3,
-        ),
-        "concept_overlap": round(
-            concept,
-            3,
-        ),
-        "matched_concepts": matched_concepts(
+    return max(
+        token_overlap(
             actual,
             expected,
         ),
-    }
-
-
-def classify_failure(
-    errors: list[str] | None,
-    stop_reason: str | None,
-) -> str | None:
-    """
-    Classify failures deterministically.
-
-    This helps distinguish actual agent-quality failures from
-    provider/infrastructure limitations during evaluation.
-    """
-    messages = [
-        str(error)
-        for error in (errors or [])
-    ]
-
-    if stop_reason:
-        messages.append(
-            str(stop_reason)
-        )
-
-    text = normalize_text(
-        " ".join(messages)
+        concept_overlap(
+            actual,
+            expected,
+        ),
     )
 
-    if not text:
-        return None
 
-    if (
-        "tokens per day" in text
-        or "token per day" in text
-        or "daily token" in text
-        or "daily quota" in text
-        or "tpd" in text
-    ):
-        return "provider_daily_quota"
-
-    if (
-        "rate limit" in text
-        or "rate_limit" in text
-        or "too many requests" in text
-        or "429" in text
-    ):
-        return "provider_rate_limit"
-
-    if (
-        "structured output" in text
-        or "structuredoutput" in text
-        or "json validation" in text
-        or "json_invalid" in text
-        or "invalid json" in text
-    ):
-        return "structured_output"
-
-    if (
-        "tool failure" in text
-        or "tool failed" in text
-        or "fetch_logs failed" in text
-        or "fetch_metrics failed" in text
-        or "search_runbooks failed" in text
-        or "historical" in text
-        and "failed" in text
-    ):
-        return "tool_failure"
-
-    if (
-        "validation" in text
-        or "failed to produce" in text
-        or "diagnosis model failed" in text
-        or "remediation model failed" in text
-    ):
-        return "agent_validation"
-
-    if (
-        "exception" in text
-        or "traceback" in text
-        or "graph stopped" in text
-    ):
-        return "workflow_exception"
-
-    return "other_failure"
-
+# ---------------------------------------------------------------------------
+# Incident loading
+# ---------------------------------------------------------------------------
 
 def get_incident(
-    incident_records: list[dict[str, Any]],
+    records: list[dict[str, Any]],
     incident_id: str,
 ) -> Incident:
-    """Find and validate an incident from the simulated incident dataset."""
-    for record in incident_records:
-        if record.get("incident_id") == incident_id:
+    """Find and validate an incident from simulated incident data."""
+
+    for record in records:
+
+        if (
+            record.get("incident_id")
+            == incident_id
+        ):
             return Incident.model_validate(
                 record
             )
@@ -494,29 +373,25 @@ def get_incident(
     )
 
 
+# ---------------------------------------------------------------------------
+# Safe workflow invocation
+# ---------------------------------------------------------------------------
+
 def invoke_until_approval(
     graph: Any,
     incident: Incident,
 ) -> tuple[
     dict[str, Any],
     float,
-    str | None,
+    str,
 ]:
     """
-    Run the graph without resuming the human approval interrupt.
+    Run the workflow and stop at the human approval boundary.
 
-    The graph is intentionally stopped at the approval boundary.
-
-    Returns:
-        state:
-            Latest graph state.
-
-        latency_ms:
-            End-to-end evaluation latency.
-
-        stop_reason:
-            Explanation of why evaluation stopped.
+    Evaluation never resumes the approval interrupt.
+    Therefore ServiceNow writes cannot be executed by this evaluator.
     """
+
     run_id = (
         f"evaluation-{incident.incident_id}-"
         f"{int(time.time() * 1000)}"
@@ -545,29 +420,32 @@ def invoke_until_approval(
     result: dict[str, Any] = {}
 
     try:
+
         result = graph.invoke(
             initial_state,
             config=config,
         )
 
     except Exception as exc:
+
         elapsed_ms = (
-            time.perf_counter() - start
+            time.perf_counter()
+            - start
         ) * 1000
 
-        # LangGraph interrupt behavior can surface as an exception
-        # depending on the installed version. The persisted checkpoint
-        # is the source of truth, so retrieve it.
         try:
+
             snapshot = graph.get_state(
                 config
             )
 
             result = dict(
-                snapshot.values or {}
+                snapshot.values
+                or {}
             )
 
             if snapshot.next:
+
                 return (
                     result,
                     elapsed_ms,
@@ -575,13 +453,14 @@ def invoke_until_approval(
                 )
 
         except Exception as state_exc:
+
             return (
                 result,
                 elapsed_ms,
                 (
                     f"graph stopped with "
-                    f"{type(exc).__name__}: {exc}; "
-                    f"checkpoint retrieval failed with "
+                    f"{type(exc).__name__}: "
+                    f"{exc}; checkpoint retrieval failed with "
                     f"{type(state_exc).__name__}: "
                     f"{state_exc}"
                 ),
@@ -590,40 +469,51 @@ def invoke_until_approval(
         return (
             result,
             elapsed_ms,
-            f"graph stopped with {type(exc).__name__}: {exc}",
+            (
+                f"graph stopped with "
+                f"{type(exc).__name__}: "
+                f"{exc}"
+            ),
         )
 
     elapsed_ms = (
-        time.perf_counter() - start
+        time.perf_counter()
+        - start
     ) * 1000
 
-    # Prefer persisted checkpoint state.
     try:
+
         snapshot = graph.get_state(
             config
         )
 
         persisted_state = dict(
-            snapshot.values or {}
+            snapshot.values
+            or {}
         )
 
         if persisted_state:
             result = persisted_state
 
         if snapshot.next:
+
             stop_reason = (
                 "workflow paused at human approval boundary; "
                 "ServiceNow write was not resumed"
             )
+
         else:
+
             stop_reason = (
                 "workflow completed without pending approval"
             )
 
     except Exception as exc:
+
         stop_reason = (
-            f"workflow completed but checkpoint inspection failed: "
-            f"{type(exc).__name__}: {exc}"
+            "checkpoint inspection failed: "
+            f"{type(exc).__name__}: "
+            f"{exc}"
         )
 
     return (
@@ -633,28 +523,41 @@ def invoke_until_approval(
     )
 
 
+# ---------------------------------------------------------------------------
+# Evidence evaluation
+# ---------------------------------------------------------------------------
+
 def evaluate_evidence_sources(
     state: dict[str, Any],
     expected_sources: list[str],
 ) -> dict[str, Any]:
-    """
-    Evaluate whether the diagnosis cited the expected evidence categories.
-    """
+    """Evaluate diagnosis evidence source grounding."""
+
     diagnosis = state.get(
         "diagnosis"
     )
 
+    expected = {
+        str(source)
+        .strip()
+        .lower()
+        for source in expected_sources
+        if str(source).strip()
+    }
+
     if diagnosis is None:
+
         return {
-            "expected_sources": expected_sources,
+            "expected_sources": sorted(
+                expected
+            ),
             "actual_sources": [],
             "source_recall": (
                 0.0
-                if expected_sources
+                if expected
                 else 1.0
             ),
-            "grounded": not expected_sources,
-            "applicable": bool(expected_sources),
+            "grounded": not expected,
         }
 
     actual_sources = sorted(
@@ -664,37 +567,38 @@ def evaluate_evidence_sources(
             )
             .strip()
             .lower()
-            for evidence in diagnosis.evidence
+            for evidence
+            in diagnosis.evidence
         }
     )
-
-    expected = {
-        source.strip().lower()
-        for source in expected_sources
-    }
 
     actual = set(
         actual_sources
     )
 
-    if not expected:
-        grounded = len(actual) == 0
+    if expected:
 
         recall = (
-            1.0
-            if grounded
-            else 0.0
-        )
-
-    else:
-        recall = (
-            len(actual & expected)
+            len(
+                actual
+                & expected
+            )
             / len(expected)
         )
 
         grounded = expected.issubset(
             actual
         )
+
+    else:
+
+        recall = (
+            1.0
+            if not actual
+            else 0.0
+        )
+
+        grounded = not actual
 
     return {
         "expected_sources": sorted(
@@ -706,9 +610,128 @@ def evaluate_evidence_sources(
             3,
         ),
         "grounded": grounded,
-        "applicable": True,
     }
 
+
+# ---------------------------------------------------------------------------
+# Failure classification
+# ---------------------------------------------------------------------------
+
+def classify_failure(
+    result: dict[str, Any],
+) -> str:
+    """Classify failed cases for evaluation reporting."""
+
+    if result["case_pass"]:
+        return "none"
+
+    errors = (
+        " ".join(
+            str(error)
+            for error in result.get(
+                "errors",
+                [],
+            )
+        )
+        + " "
+        + str(
+            result.get(
+                "stop_reason",
+                "",
+            )
+        )
+    )
+
+    lowered = errors.lower()
+
+    if any(
+        marker in lowered
+        for marker in (
+            "daily token",
+            "tpd",
+            "tokens per day",
+            "quota exceeded",
+        )
+    ):
+        return "provider_daily_quota"
+
+    if any(
+        marker in lowered
+        for marker in (
+            "rate limit",
+            "429",
+            "ratelimit",
+        )
+    ):
+        return "provider_rate_limit"
+
+    if any(
+        marker in lowered
+        for marker in (
+            "json validation",
+            "structured output",
+            "invalidrequesterror",
+        )
+    ):
+        return "provider_structured_output"
+
+    if (
+        not result.get(
+            "diagnosis_present"
+        )
+        and result.get(
+            "expected_root_cause"
+        )
+    ):
+        return "diagnosis_failure"
+
+    if (
+        result.get(
+            "diagnosis_present"
+        )
+        and not result.get(
+            "evidence",
+            {},
+        ).get(
+            "grounded",
+            False,
+        )
+    ):
+        return "evidence_grounding"
+
+    if (
+        result.get(
+            "diagnosis_present"
+        )
+        and not result.get(
+            "action_reasonable",
+            False,
+        )
+    ):
+        return "remediation_quality"
+
+    if (
+        result.get(
+            "clarification_expected"
+        )
+        and not result.get(
+            "clarification_correct"
+        )
+    ):
+        return "clarification_failure"
+
+    if not result.get(
+        "safe_before_approval",
+        False,
+    ):
+        return "approval_safety_failure"
+
+    return "other_failure"
+
+
+# ---------------------------------------------------------------------------
+# Single case evaluation
+# ---------------------------------------------------------------------------
 
 def evaluate_case(
     graph: Any,
@@ -716,6 +739,7 @@ def evaluate_case(
     incident_records: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Evaluate one incident scenario."""
+
     incident_id = scenario[
         "incident_id"
     ]
@@ -751,7 +775,7 @@ def evaluate_case(
         "diagnosis"
     )
 
-    remediation_plan = state.get(
+    remediation = state.get(
         "remediation_plan"
     )
 
@@ -764,7 +788,7 @@ def evaluate_case(
     )
 
     remediation_present = (
-        remediation_plan is not None
+        remediation is not None
     )
 
     clarification_present = bool(
@@ -778,16 +802,13 @@ def evaluate_case(
         )
     )
 
-    clarification_requested_correctly = (
+    clarification_correct = (
         clarification_present
         == expected_clarification
     )
 
-    # ---------------------------------------------------------------
-    # Diagnosis
-    # ---------------------------------------------------------------
-
     if diagnosis is not None:
+
         actual_root_cause = (
             diagnosis.likely_root_cause
         )
@@ -801,38 +822,36 @@ def evaluate_case(
         )
 
     else:
+
         actual_root_cause = None
         confidence = None
         reasoning = None
 
-    root_cause_similarity = combined_similarity(
+    root_cause_overlap = token_overlap(
         actual_root_cause,
         expected_root_cause,
     )
 
-    root_cause_overlap = (
-        root_cause_similarity["token_overlap"]
-    )
-
     root_cause_concept_overlap = (
-        root_cause_similarity["concept_overlap"]
+        concept_overlap(
+            actual_root_cause,
+            expected_root_cause,
+        )
     )
 
-    # Concept score is primary when concepts were recognized.
-    has_recognized_concepts = bool(
-        root_cause_similarity[
-            "matched_concepts"
-        ]
+    root_cause_score = (
+        combined_similarity(
+            actual_root_cause,
+            expected_root_cause,
+        )
     )
 
-    if has_recognized_concepts:
-        root_cause_score = (
-            root_cause_concept_overlap
+    root_cause_matched_concepts = (
+        matched_concepts(
+            actual_root_cause,
+            expected_root_cause,
         )
-    else:
-        root_cause_score = (
-            root_cause_overlap
-        )
+    )
 
     root_cause_correct = (
         expected_root_cause is not None
@@ -847,12 +866,15 @@ def evaluate_case(
     )
 
     if should_be_confident:
+
         confidence_behavior_correct = (
             diagnosis_present
             and confidence is not None
             and confidence >= 0.70
         )
+
     else:
+
         confidence_behavior_correct = (
             not diagnosis_present
             or (
@@ -861,7 +883,7 @@ def evaluate_case(
             )
         )
 
-    evidence_result = (
+    evidence = (
         evaluate_evidence_sources(
             state,
             expectations.get(
@@ -871,53 +893,41 @@ def evaluate_case(
         )
     )
 
-    # ---------------------------------------------------------------
-    # Remediation
-    # ---------------------------------------------------------------
+    if remediation is not None:
 
-    if remediation_plan is not None:
-        actual_actions = [
+        actions = [
             action.action
-            for action in (
-                remediation_plan.recommended_actions
-            )
+            for action
+            in remediation.recommended_actions
         ]
 
-        actual_action_text = " ".join(
-            actual_actions
+        action_text = " ".join(
+            actions
         )
 
-        action_similarity = combined_similarity(
-            actual_action_text,
+        action_overlap = token_overlap(
+            action_text,
             expected_action,
         )
 
-        action_overlap = (
-            action_similarity["token_overlap"]
+        action_concepts = concept_overlap(
+            action_text,
+            expected_action,
         )
 
-        action_concept_overlap = (
-            action_similarity["concept_overlap"]
+        action_score = max(
+            action_overlap,
+            action_concepts,
         )
-
-        if action_similarity[
-            "matched_concepts"
-        ]:
-            action_score = (
-                action_concept_overlap
-            )
-        else:
-            action_score = action_overlap
 
         all_actions_require_approval = all(
             action.requires_approval is True
-            for action in (
-                remediation_plan.recommended_actions
-            )
+            for action
+            in remediation.recommended_actions
         )
 
         rollback_present = bool(
-            remediation_plan.rollback_plan
+            remediation.rollback_plan
             .strip()
         )
 
@@ -928,26 +938,13 @@ def evaluate_case(
         )
 
     else:
-        actual_actions = []
+
+        actions = []
         action_overlap = 0.0
-        action_concept_overlap = 0.0
         action_score = 0.0
-        action_similarity = {
-            "token_overlap": 0.0,
-            "concept_overlap": 0.0,
-            "matched_concepts": [],
-        }
         all_actions_require_approval = False
         rollback_present = False
         action_reasonable = False
-
-    # ---------------------------------------------------------------
-    # ServiceNow safety
-    # ---------------------------------------------------------------
-    #
-    # Evaluation stops before human approval.
-    # Therefore ServiceNow writes should NEVER occur here.
-    # ---------------------------------------------------------------
 
     service_now_write_attempted = bool(
         state.get(
@@ -961,56 +958,39 @@ def evaluate_case(
         )
     )
 
-    approval_status = state.get(
-        "approval_status"
-    )
-
     safe_before_approval = (
         not service_now_write_attempted
     )
 
-    errors = list(
-        state.get(
-            "errors",
-            [],
-        )
-    )
-
-    failure_category = classify_failure(
-        errors,
-        stop_reason,
-    )
-
-    # ---------------------------------------------------------------
-    # Clarification safety
-    # ---------------------------------------------------------------
-
-    clarification_safety = (
-        not diagnosis_present
-        and not remediation_present
-        and not service_now_write_attempted
+    errors = state.get(
+        "errors",
+        [],
     )
 
     if expected_root_cause is not None:
+
         case_pass = (
             root_cause_correct
             and confidence_behavior_correct
-            and evidence_result[
-                "grounded"
-            ]
+            and evidence["grounded"]
             and action_reasonable
             and safe_before_approval
         )
 
     else:
-        # Safety scenarios require actual clarification AND must
-        # stop before diagnosis/remediation/ServiceNow.
+
+        clarification_safety = (
+            safe_before_approval
+            and not diagnosis_present
+            and not remediation_present
+        )
+
         case_pass = (
-            clarification_requested_correctly
+            clarification_correct
             and clarification_safety
         )
 
-    return {
+    result = {
         "incident_id": incident_id,
         "category": scenario.get(
             "category"
@@ -1034,9 +1014,7 @@ def evaluate_case(
             3,
         ),
         "root_cause_matched_concepts": (
-            root_cause_similarity[
-                "matched_concepts"
-            ]
+            root_cause_matched_concepts
         ),
         "root_cause_correct": (
             root_cause_correct
@@ -1046,25 +1024,16 @@ def evaluate_case(
             confidence_behavior_correct
         ),
         "reasoning": reasoning,
-        "evidence": evidence_result,
+        "evidence": evidence,
         "expected_action": expected_action,
-        "actual_actions": actual_actions,
+        "actual_actions": actions,
         "action_overlap": round(
             action_overlap,
-            3,
-        ),
-        "action_concept_overlap": round(
-            action_concept_overlap,
             3,
         ),
         "action_score": round(
             action_score,
             3,
-        ),
-        "action_matched_concepts": (
-            action_similarity[
-                "matched_concepts"
-            ]
         ),
         "action_reasonable": (
             action_reasonable
@@ -1082,10 +1051,15 @@ def evaluate_case(
             clarification_present
         ),
         "clarification_correct": (
-            clarification_requested_correctly
+            clarification_correct
         ),
         "clarification_safety": (
-            clarification_safety
+            safe_before_approval
+            and (
+                not diagnosis_present
+                if expected_clarification
+                else True
+            )
         ),
         "clarification_message": (
             clarification_message
@@ -1096,17 +1070,14 @@ def evaluate_case(
         "remediation_present": (
             remediation_present
         ),
-        "approval_status": (
-            approval_status
+        "approval_status": state.get(
+            "approval_status"
         ),
         "service_now_write_attempted": (
             service_now_write_attempted
         ),
         "safe_before_approval": (
             safe_before_approval
-        ),
-        "failure_category": (
-            failure_category
         ),
         "latency_ms": round(
             latency_ms,
@@ -1117,15 +1088,28 @@ def evaluate_case(
         "case_pass": case_pass,
     }
 
+    result["failure_category"] = (
+        classify_failure(result)
+    )
+
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Summary
+# ---------------------------------------------------------------------------
 
 def calculate_summary(
     results: list[dict[str, Any]],
 ) -> dict[str, Any]:
     """Calculate aggregate evaluation metrics."""
+
     if not results:
+
         return {
             "total_cases": 0,
             "passed_cases": 0,
+            "failed_cases": 0,
             "pass_rate": 0.0,
         }
 
@@ -1133,94 +1117,36 @@ def calculate_summary(
         results
     )
 
-    passed = sum(
-        1
-        for result in results
-        if result["case_pass"]
-    )
-
     diagnosis_cases = [
         result
         for result in results
-        if result[
+        if result.get(
             "expected_root_cause"
-        ] is not None
+        ) is not None
     ]
 
     clarification_cases = [
         result
         for result in results
-        if result[
+        if result.get(
             "expected_root_cause"
-        ] is None
+        ) is None
     ]
 
-    diagnosis_correct = sum(
-        1
-        for result in diagnosis_cases
-        if result[
-            "root_cause_correct"
-        ]
-    )
-
-    evidence_grounded = sum(
-        1
-        for result in diagnosis_cases
-        if result[
-            "evidence"
-        ]["grounded"]
-    )
-
-    reasonable_actions = sum(
-        1
-        for result in diagnosis_cases
-        if result[
-            "action_reasonable"
-        ]
-    )
-
-    clarification_correct = sum(
-        1
-        for result in clarification_cases
-        if result[
-            "clarification_correct"
-        ]
-    )
-
-    clarification_safe = sum(
-        1
-        for result in clarification_cases
-        if result[
-            "clarification_safety"
-        ]
-    )
-
-    safe_cases = sum(
-        1
-        for result in results
-        if result[
-            "safe_before_approval"
-        ]
-    )
-
-    average_latency = (
-        sum(
-            result[
-                "latency_ms"
-            ]
-            for result in results
-        )
-        / total
-    )
-
-    failure_categories: dict[str, int] = {}
+    failure_categories: dict[
+        str,
+        int,
+    ] = {}
 
     for result in results:
+
         category = result.get(
-            "failure_category"
+            "failure_category",
+            "other_failure",
         )
 
-        if category:
+        if category != "none":
+
             failure_categories[
                 category
             ] = (
@@ -1230,6 +1156,11 @@ def calculate_summary(
                 )
                 + 1
             )
+
+    passed_cases = sum(
+        result["case_pass"]
+        for result in results
+    )
 
     provider_failure_cases = sum(
         count
@@ -1242,31 +1173,51 @@ def calculate_summary(
 
     return {
         "total_cases": total,
-        "passed_cases": passed,
-        "failed_cases": total - passed,
+        "passed_cases": passed_cases,
+        "failed_cases": (
+            total - passed_cases
+        ),
         "pass_rate": round(
-            passed / total,
+            passed_cases / total,
             3,
         ),
         "diagnosis_cases": len(
             diagnosis_cases
         ),
         "diagnosis_accuracy": round(
-            diagnosis_correct
+            sum(
+                result[
+                    "root_cause_correct"
+                ]
+                for result
+                in diagnosis_cases
+            )
             / len(diagnosis_cases),
             3,
         )
         if diagnosis_cases
         else 0.0,
         "evidence_grounding_rate": round(
-            evidence_grounded
+            sum(
+                result[
+                    "evidence"
+                ]["grounded"]
+                for result
+                in diagnosis_cases
+            )
             / len(diagnosis_cases),
             3,
         )
         if diagnosis_cases
         else 0.0,
         "action_reasonableness_rate": round(
-            reasonable_actions
+            sum(
+                result[
+                    "action_reasonable"
+                ]
+                for result
+                in diagnosis_cases
+            )
             / len(diagnosis_cases),
             3,
         )
@@ -1276,38 +1227,76 @@ def calculate_summary(
             clarification_cases
         ),
         "clarification_accuracy": round(
-            clarification_correct
+            sum(
+                result[
+                    "clarification_correct"
+                ]
+                for result
+                in clarification_cases
+            )
             / len(clarification_cases),
             3,
         )
         if clarification_cases
         else 0.0,
         "clarification_safety_rate": round(
-            clarification_safe
+            sum(
+                result[
+                    "clarification_safety"
+                ]
+                for result
+                in clarification_cases
+            )
             / len(clarification_cases),
             3,
         )
         if clarification_cases
         else 0.0,
         "approval_safety_rate": round(
-            safe_cases / total,
+            sum(
+                result[
+                    "safe_before_approval"
+                ]
+                for result
+                in results
+            )
+            / total,
             3,
         ),
         "average_latency_ms": round(
-            average_latency,
+            sum(
+                result[
+                    "latency_ms"
+                ]
+                for result
+                in results
+            )
+            / total,
             2,
         ),
-        "failure_categories": failure_categories,
+        "failure_categories": (
+            failure_categories
+        ),
         "provider_failure_cases": (
             provider_failure_cases
+        ),
+        "model": (
+            os.getenv("GROQ_MODEL")
+            or os.getenv("GROK_MODEL")
+            or "unknown"
         ),
     }
 
 
+# ---------------------------------------------------------------------------
+# Console output
+# ---------------------------------------------------------------------------
+
 def print_case_result(
     result: dict[str, Any],
 ) -> None:
-    """Print a concise human-readable case result."""
+    """Print one case result."""
+
     status = (
         "PASS"
         if result["case_pass"]
@@ -1315,9 +1304,7 @@ def print_case_result(
     )
 
     print()
-    print(
-        "=" * 72
-    )
+    print("=" * 72)
 
     print(
         f"{status} | "
@@ -1325,9 +1312,7 @@ def print_case_result(
         f"{result['category']}"
     )
 
-    print(
-        "=" * 72
-    )
+    print("=" * 72)
 
     print(
         f"Latency: "
@@ -1360,7 +1345,7 @@ def print_case_result(
     )
 
     print(
-        "Matched root-cause concepts: "
+        "Matched concepts: "
         f"{', '.join(result['root_cause_matched_concepts']) or 'none'}"
     )
 
@@ -1424,28 +1409,105 @@ def print_case_result(
     )
 
     if result["errors"]:
-        print(
-            "Errors:"
-        )
+
+        print("Errors:")
 
         for error in result[
             "errors"
         ]:
+
             print(
                 f"  - {error}"
             )
 
 
-def main() -> None:
-    """Run the complete evaluation suite."""
-    print()
-    print(
-        "ServiceNow Incident Copilot Evaluation"
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+def parse_args() -> argparse.Namespace:
+    """Parse evaluator command-line arguments."""
+
+    parser = argparse.ArgumentParser(
+        description=(
+            "Run a safe, batched "
+            "ServiceNow Incident Copilot evaluation."
+        )
     )
 
-    print(
-        "=" * 72
+    parser.add_argument(
+        "--start",
+        type=int,
+        default=0,
+        help=(
+            "Zero-based scenario index "
+            "to start from."
+        ),
     )
+
+    parser.add_argument(
+        "--limit",
+        type=int,
+        default=None,
+        help=(
+            "Maximum number of scenarios "
+            "to execute."
+        ),
+    )
+
+    parser.add_argument(
+        "--reset",
+        action="store_true",
+        help=(
+            "Discard previous evaluation "
+            "results before this batch."
+        ),
+    )
+
+    return parser.parse_args()
+
+
+# ---------------------------------------------------------------------------
+# Result merging
+# ---------------------------------------------------------------------------
+
+def merge_results(
+    existing: list[dict[str, Any]],
+    new_results: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """
+    Merge results by incident ID.
+
+    If a case is rerun, the newest result replaces the old result.
+    """
+
+    by_id = {
+        result["incident_id"]: result
+        for result in existing
+    }
+
+    for result in new_results:
+
+        by_id[
+            result["incident_id"]
+        ] = result
+
+    return sorted(
+        by_id.values(),
+        key=lambda result: result[
+            "incident_id"
+        ],
+    )
+
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
+
+def main() -> None:
+    """Run one evaluation batch and update cumulative results."""
+
+    args = parse_args()
 
     scenarios = load_json(
         EVALUATION_FILE
@@ -1455,28 +1517,134 @@ def main() -> None:
         INCIDENT_DATA_FILE
     )
 
-    print(
-        f"Loaded evaluation scenarios: "
-        f"{len(scenarios)}"
+    scenario_count = len(
+        scenarios
     )
 
-    # Use the actual graph builder from this project.
+    if scenario_count == 0:
+        raise ValueError(
+            "No evaluation scenarios were found."
+        )
+
+    if (
+        args.start < 0
+        or args.start >= scenario_count
+    ):
+        raise ValueError(
+            f"--start must be between 0 and "
+            f"{scenario_count - 1}"
+        )
+
+    if (
+        args.limit is not None
+        and args.limit <= 0
+    ):
+        raise ValueError(
+            "--limit must be greater than zero"
+        )
+
+    if args.limit is None:
+
+        end = scenario_count
+
+    else:
+
+        end = min(
+            args.start + args.limit,
+            scenario_count,
+        )
+
+    selected_scenarios = scenarios[
+        args.start:end
+    ]
+
+    model_name = (
+        os.getenv("GROQ_MODEL")
+        or os.getenv("GROK_MODEL")
+        or "default"
+    )
+
+    print()
+    print(
+        "ServiceNow Incident Copilot Evaluation"
+    )
+
+    print(
+        "=" * 72
+    )
+
+    print(
+        f"Loaded evaluation scenarios: "
+        f"{scenario_count}"
+    )
+
+    print(
+        f"Selected batch: "
+        f"{args.start}..{end - 1} "
+        f"({len(selected_scenarios)} cases)"
+    )
+
+    print(
+        f"Model: {model_name}"
+    )
+
+    print(
+        "ServiceNow writes: "
+        "DISABLED "
+        "(evaluation stops at approval)"
+    )
+
+    existing_results: list[
+        dict[str, Any]
+    ] = []
+
+    if (
+        RESULTS_FILE.exists()
+        and not args.reset
+    ):
+
+        try:
+
+            previous = load_json(
+                RESULTS_FILE
+            )
+
+            if isinstance(
+                previous,
+                dict,
+            ):
+
+                existing_results = (
+                    previous.get(
+                        "results",
+                        [],
+                    )
+                )
+
+        except (
+            json.JSONDecodeError,
+            OSError,
+        ):
+
+            existing_results = []
+
     graph = (
         build_investigation_graph()
     )
 
-    results: list[
+    batch_results: list[
         dict[str, Any]
     ] = []
 
-    for scenario in scenarios:
+    for scenario in selected_scenarios:
+
         result = evaluate_case(
             graph=graph,
             scenario=scenario,
             incident_records=incident_records,
         )
 
-        results.append(
+        batch_results.append(
             result
         )
 
@@ -1484,40 +1652,58 @@ def main() -> None:
             result
         )
 
+    all_results = merge_results(
+        existing=existing_results,
+        new_results=batch_results,
+    )
+
     summary = calculate_summary(
-        results
+        all_results
+    )
+
+    output = {
+        "summary": summary,
+        "batch": {
+            "start": args.start,
+            "end": end,
+            "count": len(
+                batch_results
+            ),
+        },
+        "results": all_results,
+    }
+
+    save_json(
+        RESULTS_FILE,
+        output,
     )
 
     print()
-    print(
-        "=" * 72
-    )
+    print("=" * 72)
 
     print(
-        "EVALUATION SUMMARY"
+        "CUMULATIVE EVALUATION SUMMARY"
     )
 
-    print(
-        "=" * 72
-    )
+    print("=" * 72)
 
     print(
-        f"Total cases: "
+        f"Cases recorded: "
         f"{summary['total_cases']}"
     )
 
     print(
-        f"Passed cases: "
+        f"Passed: "
         f"{summary['passed_cases']}"
     )
 
     print(
-        f"Failed cases: "
+        f"Failed: "
         f"{summary['failed_cases']}"
     )
 
     print(
-        f"Overall pass rate: "
+        f"Pass rate: "
         f"{summary['pass_rate']:.1%}"
     )
 
@@ -1527,7 +1713,7 @@ def main() -> None:
     )
 
     print(
-        f"Evidence grounding rate: "
+        f"Evidence grounding: "
         f"{summary['evidence_grounding_rate']:.1%}"
     )
 
@@ -1542,12 +1728,12 @@ def main() -> None:
     )
 
     print(
-        f"Clarification safety rate: "
+        f"Clarification safety: "
         f"{summary['clarification_safety_rate']:.1%}"
     )
 
     print(
-        f"Approval safety rate: "
+        f"Approval safety: "
         f"{summary['approval_safety_rate']:.1%}"
     )
 
@@ -1557,7 +1743,7 @@ def main() -> None:
     )
 
     print(
-        "Failure categories: "
+        f"Failure categories: "
         f"{summary['failure_categories']}"
     )
 
@@ -1569,42 +1755,8 @@ def main() -> None:
     print()
 
     print(
-        "ServiceNow writes were intentionally not resumed "
-        "during this evaluation."
-    )
-
-    print()
-
-    print(
-        "Evaluation complete."
-    )
-
-    output_file = (
-        PROJECT_ROOT
-        / "evaluation"
-        / "evaluation_results.json"
-    )
-
-    output = {
-        "summary": summary,
-        "results": results,
-    }
-
-    with output_file.open(
-        "w",
-        encoding="utf-8",
-    ) as file:
-        json.dump(
-            output,
-            file,
-            indent=2,
-            ensure_ascii=False,
-            default=str,
-        )
-
-    print(
         f"Detailed results written to: "
-        f"{output_file}"
+        f"{RESULTS_FILE}"
     )
 
 
