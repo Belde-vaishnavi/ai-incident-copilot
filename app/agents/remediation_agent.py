@@ -19,7 +19,10 @@ It does NOT:
 - update ServiceNow incidents.
 """
 
-from app.llm.provider import get_llm
+from app.llm.provider import (
+    get_llm,
+    invoke_structured_with_retry,
+)
 from app.models.remediation import RemediationPlan
 from app.prompts.remediation_prompt import build_remediation_prompt
 
@@ -228,8 +231,13 @@ def _validate_remediation_plan(
     # Root cause consistency
     # ---------------------------------------------------------
 
-    diagnosis_root_cause = diagnosis.likely_root_cause.strip().lower()
-    plan_root_cause = plan.likely_root_cause.strip().lower()
+    diagnosis_root_cause = (
+        diagnosis.likely_root_cause.strip().lower()
+    )
+
+    plan_root_cause = (
+        plan.likely_root_cause.strip().lower()
+    )
 
     if not diagnosis_root_cause:
         raise ValueError(
@@ -241,7 +249,6 @@ def _validate_remediation_plan(
             "Remediation root cause cannot be empty."
         )
 
-    # Require meaningful overlap rather than exact string equality.
     diagnosis_tokens = {
         token
         for token in diagnosis_root_cause.replace(",", " ").split()
@@ -254,9 +261,12 @@ def _validate_remediation_plan(
         if len(token) > 3
     }
 
-    if diagnosis_tokens and not diagnosis_tokens.intersection(plan_tokens):
+    if diagnosis_tokens and not diagnosis_tokens.intersection(
+        plan_tokens
+    ):
         raise ValueError(
-            "Remediation plan root cause is inconsistent with the validated diagnosis."
+            "Remediation plan root cause is inconsistent with "
+            "the validated diagnosis."
         )
 
     # ---------------------------------------------------------
@@ -265,7 +275,8 @@ def _validate_remediation_plan(
 
     if abs(plan.confidence - diagnosis.confidence) > 0.15:
         raise ValueError(
-            "Remediation plan confidence differs too much from the validated diagnosis confidence."
+            "Remediation plan confidence differs too much from "
+            "the validated diagnosis confidence."
         )
 
     # ---------------------------------------------------------
@@ -292,7 +303,6 @@ def _validate_remediation_plan(
         available_sources.add("historical")
 
     for evidence in plan.evidence:
-
         source = evidence.source.strip().lower()
 
         if source not in ALLOWED_EVIDENCE_SOURCES:
@@ -302,7 +312,8 @@ def _validate_remediation_plan(
 
         if source not in available_sources:
             raise ValueError(
-                f"Remediation plan cites unavailable evidence source: {source}"
+                "Remediation plan cites unavailable evidence source: "
+                f"{source}"
             )
 
         if not evidence.detail.strip():
@@ -326,7 +337,7 @@ def _validate_remediation_plan(
                 "Recommended remediation action risk cannot be empty."
             )
 
-        # This is a hard safety boundary.
+        # Hard safety boundary.
         if action.requires_approval is not True:
             raise ValueError(
                 "Every remediation action must require human approval."
@@ -353,13 +364,13 @@ def _validate_remediation_plan(
             "ServiceNow work_notes cannot be empty."
         )
 
-    # Prevent the LLM from changing incident severity implicitly.
     if (
         servicenow_update.severity.strip().lower()
         != incident.severity.strip().lower()
     ):
         raise ValueError(
-            "Proposed ServiceNow severity must match the current incident severity."
+            "Proposed ServiceNow severity must match "
+            "the current incident severity."
         )
 
     # ---------------------------------------------------------
@@ -380,13 +391,15 @@ def _validate_remediation_plan(
         "created servicenow",
     ]
 
-    work_notes_lower = servicenow_update.work_notes.lower()
+    work_notes_lower = (
+        servicenow_update.work_notes.lower()
+    )
 
     for phrase in prohibited_execution_phrases:
         if phrase in work_notes_lower:
             raise ValueError(
-                "ServiceNow work_notes contain a prohibited execution claim: "
-                f"'{phrase}'."
+                "ServiceNow work_notes contain a prohibited "
+                f"execution claim: '{phrase}'."
             )
 
     return plan
@@ -414,11 +427,26 @@ def create_remediation_plan(state: dict) -> RemediationPlan:
             "Cannot create remediation plan because validated diagnosis is missing."
         )
 
-    incident_context = _format_incident_context(incident)
-    diagnosis_context = _format_diagnosis_context(diagnosis)
-    logs_context = _format_logs(state.get("logs", []))
-    metrics_context = _format_metrics(state.get("metrics", []))
-    runbooks_context = _format_runbooks(state.get("runbooks", []))
+    incident_context = _format_incident_context(
+        incident
+    )
+
+    diagnosis_context = _format_diagnosis_context(
+        diagnosis
+    )
+
+    logs_context = _format_logs(
+        state.get("logs", [])
+    )
+
+    metrics_context = _format_metrics(
+        state.get("metrics", [])
+    )
+
+    runbooks_context = _format_runbooks(
+        state.get("runbooks", [])
+    )
+
     historical_context = _format_historical_context(
         state.get("historical_context", [])
     )
@@ -439,7 +467,11 @@ def create_remediation_plan(state: dict) -> RemediationPlan:
     )
 
     try:
-        plan = structured_llm.invoke(prompt)
+        plan = invoke_structured_with_retry(
+            structured_llm=structured_llm,
+            prompt=prompt,
+            operation_name="create_remediation_plan",
+        )
 
     except Exception as exc:
         raise ValueError(
@@ -449,7 +481,9 @@ def create_remediation_plan(state: dict) -> RemediationPlan:
 
     if not isinstance(plan, RemediationPlan):
         try:
-            plan = RemediationPlan.model_validate(plan)
+            plan = RemediationPlan.model_validate(
+                plan
+            )
 
         except Exception as exc:
             raise ValueError(

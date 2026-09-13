@@ -11,7 +11,10 @@ Responsibilities:
 This agent does not execute remediation or write to ServiceNow.
 """
 
-from app.llm.provider import get_llm
+from app.llm.provider import (
+    get_llm,
+    invoke_structured_with_retry,
+)
 from app.models.diagnosis import DiagnosisResult
 from app.prompts.diagnosis_prompt import build_diagnosis_prompt
 
@@ -229,29 +232,33 @@ def _validate_diagnosis(
 
     current_source_count = len(current_evidence_sources)
 
-    # Historical-only evidence should never support very high confidence.
     evidence_has_current_source = bool(
         current_evidence_sources.intersection(
             {"logs", "metrics"}
         )
     )
 
-    if not evidence_has_current_source and diagnosis.confidence > 0.74:
+    if (
+        not evidence_has_current_source
+        and diagnosis.confidence > 0.74
+    ):
         raise ValueError(
             "Diagnosis confidence is too high because the diagnosis "
             "does not contain current incident log or metric evidence."
         )
 
-    # A diagnosis based on only one evidence source should not claim
-    # very high confidence.
-    if evidence_source_count == 1 and diagnosis.confidence > 0.89:
+    if (
+        evidence_source_count == 1
+        and diagnosis.confidence > 0.89
+    ):
         raise ValueError(
             "Diagnosis confidence is too high for a single evidence source."
         )
 
-    # If investigation has multiple current sources, a very high
-    # confidence is allowed only when the model cited multiple sources.
-    if current_source_count >= 2 and evidence_source_count < 2:
+    if (
+        current_source_count >= 2
+        and evidence_source_count < 2
+    ):
         raise ValueError(
             "Diagnosis should cite multiple evidence sources when "
             "multiple investigation sources are available."
@@ -308,7 +315,11 @@ def diagnose_incident(state: dict) -> DiagnosisResult:
     )
 
     try:
-        diagnosis = structured_llm.invoke(prompt)
+        diagnosis = invoke_structured_with_retry(
+            structured_llm=structured_llm,
+            prompt=prompt,
+            operation_name="diagnose_incident",
+        )
 
     except Exception as exc:
         raise ValueError(
