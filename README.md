@@ -4,8 +4,6 @@ A lightweight, production-minded AI Incident Copilot for SRE workflows.
 
 The system accepts an incident description, investigates the incident using structured logs, metrics, runbooks, and historical incident context, reasons about a likely root cause, generates a structured remediation plan, and requires explicit human approval before performing ServiceNow writes.
 
-This project is implemented as an explicit agentic workflow rather than a simple chatbot.
-git status
 ---
 
 ## 1. Project Overview
