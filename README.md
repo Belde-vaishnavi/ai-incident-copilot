@@ -5,7 +5,7 @@ A lightweight, production-minded AI Incident Copilot for SRE workflows.
 The system accepts an incident description, investigates the incident using structured logs, metrics, runbooks, and historical incident context, reasons about a likely root cause, generates a structured remediation plan, and requires explicit human approval before performing ServiceNow writes.
 
 This project is implemented as an explicit agentic workflow rather than a simple chatbot.
-
+git status
 ---
 
 ## 1. Project Overview
@@ -1029,7 +1029,7 @@ With additional development time, the system could be extended with:
 
 ---
 
-## 24. Interview / Design Summary
+## 24. Design Summary
 
 The core design can be summarized as:
 
@@ -1064,29 +1064,4 @@ The key principle is:
 > The LLM performs reasoning and recommendation, while the workflow controls state, validation, branching, approval, and external side effects.
 
 ---
-
-## 25. Final Status
-
-| Area | Status |
-|---|---|
-| Project scaffold | Complete |
-| Simulated incident data | Complete |
-| Typed investigation tools | Complete |
-| Typed ServiceNow tools | Complete |
-| LangGraph workflow | Complete |
-| Evidence assessment | Complete |
-| Diagnosis agent | Complete |
-| Remediation agent | Complete |
-| Human approval | Complete |
-| ServiceNow PDI integration | Complete |
-| Duplicate prevention | Complete |
-| Retry/error handling | Complete |
-| Observability | Complete |
-| Evaluation harness | Complete |
-| 12 scenario evaluation | Complete |
-| Evaluation report | Complete |
-| Automated tests | Passing |
-| Documentation | Complete |
-
-
 
