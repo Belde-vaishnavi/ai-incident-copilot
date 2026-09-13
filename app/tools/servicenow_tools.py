@@ -10,7 +10,10 @@ Safety principles:
 - Create operations use an idempotency marker to prevent duplicates.
 - Errors are returned as structured results.
 - Sensitive configuration and credentials are never logged.
+- ServiceNow tool calls are traced with latency and redacted inputs/outputs.
 """
+
+from __future__ import annotations
 
 import hashlib
 import logging
@@ -26,12 +29,15 @@ from app.models.servicenow import (
     ServiceNowToolResult,
     ServiceNowUpdateRequest,
 )
+from app.observability.tracer import trace_tool
+
 
 logger = logging.getLogger(__name__)
 
 load_dotenv()
 
 REQUEST_TIMEOUT_SECONDS = 30
+
 
 # ------------------------------------------------------------------
 # Application severity -> ServiceNow impact/urgency mapping
@@ -53,7 +59,9 @@ SEVERITY_MAPPING = {
 }
 
 
-def _get_severity_mapping(severity: str) -> dict[str, str]:
+def _get_severity_mapping(
+    severity: str,
+) -> dict[str, str]:
     """
     Convert the application's P1/P2/P3 severity into the
     ServiceNow impact/urgency representation.
@@ -108,7 +116,9 @@ def _get_configuration() -> tuple[str, str, str]:
     return instance, username, password
 
 
-def _incident_collection_url(instance: str) -> str:
+def _incident_collection_url(
+    instance: str,
+) -> str:
     return (
         f"{instance}/api/now/table/incident"
     )
@@ -123,12 +133,14 @@ def _incident_record_url(
     )
 
 
-def _redact_payload(payload: dict[str, Any]) -> dict[str, Any]:
+def _redact_payload(
+    payload: dict[str, Any],
+) -> dict[str, Any]:
     """
     Return a logging-safe payload.
 
-    Work notes may contain operational information, so they are
-    summarized rather than logged verbatim.
+    Work notes and descriptions may contain operational information,
+    so they are summarized rather than logged verbatim.
     """
 
     redacted = dict(payload)
@@ -170,7 +182,10 @@ def _parse_incident(
         sys_id=str(data["sys_id"]),
         number=str(data["number"]),
         short_description=str(
-            data.get("short_description", "")
+            data.get(
+                "short_description",
+                "",
+            )
         ),
         state=(
             str(data["state"])
@@ -195,6 +210,10 @@ def _parse_incident(
     )
 
 
+@trace_tool(
+    tool_name="get_servicenow_incident",
+    operation="get_servicenow_incident",
+)
 def get_servicenow_incident(
     incident_id: str,
 ) -> ServiceNowToolResult:
@@ -224,7 +243,10 @@ def get_servicenow_incident(
 
         response = requests.get(
             url,
-            auth=(username, password),
+            auth=(
+                username,
+                password,
+            ),
             headers={
                 "Accept": "application/json",
             },
@@ -232,7 +254,7 @@ def get_servicenow_incident(
                 "sysparm_fields": (
                     "sys_id,number,short_description,"
                     "state,impact,urgency,priority"
-                )
+                ),
             },
             timeout=REQUEST_TIMEOUT_SECONDS,
         )
@@ -329,7 +351,10 @@ def _find_existing_by_idempotency_key(
 
     response = requests.get(
         _incident_collection_url(instance),
-        auth=(username, password),
+        auth=(
+            username,
+            password,
+        ),
         headers={
             "Accept": "application/json",
         },
@@ -351,18 +376,33 @@ def _find_existing_by_idempotency_key(
             "Idempotency lookup returned HTTP %s.",
             response.status_code,
         )
+
         return None
 
     body = response.json()
 
-    records = body.get("result", [])
+    records = body.get(
+        "result",
+        [],
+    )
 
     if not records:
         return None
 
-    return _parse_incident(records[0])
+    return _parse_incident(
+        records[0]
+    )
 
 
+@trace_tool(
+    tool_name="create_servicenow_incident",
+    operation="create_servicenow_incident",
+    sensitive_keys={
+        "description",
+        "work_notes",
+        "idempotency_key",
+    },
+)
 def create_servicenow_incident(
     title: str,
     description: str,
@@ -488,7 +528,10 @@ def create_servicenow_incident(
 
         response = requests.post(
             _incident_collection_url(instance),
-            auth=(username, password),
+            auth=(
+                username,
+                password,
+            ),
             headers={
                 "Accept": "application/json",
                 "Content-Type": "application/json",
@@ -561,6 +604,13 @@ def create_servicenow_incident(
         )
 
 
+@trace_tool(
+    tool_name="update_servicenow_incident",
+    operation="update_servicenow_incident",
+    sensitive_keys={
+        "work_notes",
+    },
+)
 def update_servicenow_incident(
     incident_id: str,
     state: str,
@@ -648,7 +698,10 @@ def update_servicenow_incident(
                 instance,
                 request.incident_id,
             ),
-            auth=(username, password),
+            auth=(
+                username,
+                password,
+            ),
             headers={
                 "Accept": "application/json",
                 "Content-Type": "application/json",

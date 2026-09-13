@@ -1,4 +1,5 @@
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
 from langgraph.graph import END, START, StateGraph
 
 from app.graph.edges import (
@@ -17,75 +18,121 @@ from app.graph.nodes import (
 )
 from app.graph.servicenow_node import write_to_servicenow
 from app.graph.state import InvestigationState
+from app.observability.tracer import trace_node
+
+
+CHECKPOINT_ALLOWED_MSGPACK_MODULES = [
+    ("app.models.incident", "Incident"),
+    ("app.models.investigation", "LogEntry"),
+    ("app.models.investigation", "MetricSnapshot"),
+    ("app.models.investigation", "RunbookMatch"),
+    ("app.models.investigation", "HistoricalIncident"),
+    ("app.models.diagnosis", "DiagnosisEvidence"),
+    ("app.models.diagnosis", "DiagnosisResult"),
+    ("app.models.remediation", "Evidence"),
+    ("app.models.remediation", "RecommendedAction"),
+    ("app.models.remediation", "ServiceNowUpdate"),
+    ("app.models.remediation", "RemediationPlan"),
+]
 
 
 def build_investigation_graph():
     """
-    Build the explicit LangGraph workflow.
+    Build and compile the Incident Copilot LangGraph workflow.
 
-    A MemorySaver checkpointer is used so the workflow can pause at
-    the human approval boundary and later resume without repeating
-    the investigation or LLM reasoning steps.
+    The graph uses:
+    - Explicit typed/shared state.
+    - Conditional routing.
+    - Retry behavior for investigation tool failures.
+    - Diagnosis and remediation stages.
+    - Human approval using LangGraph interrupt().
+    - ServiceNow write boundary after approval.
+    - In-memory checkpointing for the demo.
+    - Explicit checkpoint serialization allow-list.
+    - Node-level observability instrumentation.
     """
 
-    graph = StateGraph(InvestigationState)
+    graph = StateGraph(
+        InvestigationState
+    )
 
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
     # Nodes
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
 
     graph.add_node(
         "investigate",
-        investigate_incident,
+        trace_node(
+            "investigate",
+            investigate_incident,
+        ),
     )
 
     graph.add_node(
         "assess_evidence",
-        assess_evidence,
+        trace_node(
+            "assess_evidence",
+            assess_evidence,
+        ),
     )
 
     graph.add_node(
         "diagnosis",
-        run_diagnosis,
+        trace_node(
+            "diagnosis",
+            run_diagnosis,
+        ),
     )
 
     graph.add_node(
         "remediation",
-        run_remediation_planning,
+        trace_node(
+            "remediation",
+            run_remediation_planning,
+        ),
     )
 
     graph.add_node(
         "approval",
-        request_human_approval,
+        trace_node(
+            "approval",
+            request_human_approval,
+        ),
     )
 
     graph.add_node(
         "servicenow",
-        write_to_servicenow,
+        trace_node(
+            "servicenow",
+            write_to_servicenow,
+        ),
     )
 
     graph.add_node(
         "clarification",
-        request_clarification,
+        trace_node(
+            "clarification",
+            request_clarification,
+        ),
     )
 
-    # ---------------------------------------------------------
-    # Start
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Initial investigation flow
+    # ------------------------------------------------------------------
 
     graph.add_edge(
         START,
         "investigate",
     )
 
-    # ---------------------------------------------------------
-    # Investigation
-    # ---------------------------------------------------------
-
     graph.add_edge(
         "investigate",
         "assess_evidence",
     )
+
+    # ------------------------------------------------------------------
+    # Evidence routing
+    # ------------------------------------------------------------------
 
     graph.add_conditional_edges(
         "assess_evidence",
@@ -97,9 +144,9 @@ def build_investigation_graph():
         },
     )
 
-    # ---------------------------------------------------------
-    # Diagnosis
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Diagnosis routing
+    # ------------------------------------------------------------------
 
     graph.add_conditional_edges(
         "diagnosis",
@@ -110,9 +157,9 @@ def build_investigation_graph():
         },
     )
 
-    # ---------------------------------------------------------
-    # Remediation
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Remediation routing
+    # ------------------------------------------------------------------
 
     graph.add_conditional_edges(
         "remediation",
@@ -123,9 +170,9 @@ def build_investigation_graph():
         },
     )
 
-    # ---------------------------------------------------------
-    # Human approval
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Human approval routing
+    # ------------------------------------------------------------------
 
     graph.add_conditional_edges(
         "approval",
@@ -138,29 +185,33 @@ def build_investigation_graph():
         },
     )
 
-    # ---------------------------------------------------------
-    # ServiceNow
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Terminal paths
+    # ------------------------------------------------------------------
 
     graph.add_edge(
         "servicenow",
         END,
     )
 
-    # ---------------------------------------------------------
-    # Clarification
-    # ---------------------------------------------------------
-
     graph.add_edge(
         "clarification",
         END,
     )
 
-    # ---------------------------------------------------------
-    # Compile with checkpointing
-    # ---------------------------------------------------------
+    # ------------------------------------------------------------------
+    # Checkpoint configuration
+    # ------------------------------------------------------------------
 
-    checkpointer = MemorySaver()
+    serde = JsonPlusSerializer(
+        allowed_msgpack_modules=(
+            CHECKPOINT_ALLOWED_MSGPACK_MODULES
+        ),
+    )
+
+    checkpointer = MemorySaver(
+        serde=serde,
+    )
 
     return graph.compile(
         checkpointer=checkpointer,

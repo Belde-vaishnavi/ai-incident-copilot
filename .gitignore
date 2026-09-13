@@ -23,6 +23,11 @@ htmlcov/
 # Logs
 *.log
 
+# Runtime traces
+traces/
+*.trace
+*.trace.json
+
 # OS
 .DS_Store
 Thumbs.db

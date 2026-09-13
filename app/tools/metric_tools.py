@@ -7,11 +7,20 @@ from app.models.investigation import (
     MetricFetchResult,
     MetricSnapshot,
 )
+from app.observability.tracer import trace_tool
 
 
-DATA_FILE = Path(__file__).resolve().parents[1] / "data" / "metrics.json"
+DATA_FILE = (
+    Path(__file__).resolve().parents[1]
+    / "data"
+    / "metrics.json"
+)
 
 
+@trace_tool(
+    tool_name="fetch_metrics",
+    operation="fetch_metrics",
+)
 def fetch_metrics(
     service: str,
     start_time: datetime,
@@ -19,6 +28,8 @@ def fetch_metrics(
 ) -> MetricFetchResult:
     """
     Fetch simulated metrics for a service within a specified time window.
+
+    The tool is read-only and returns structured success/error information.
     """
 
     if not service or not service.strip():
@@ -38,14 +49,21 @@ def fetch_metrics(
         )
 
     try:
-        with DATA_FILE.open("r", encoding="utf-8") as file:
+        with DATA_FILE.open(
+            "r",
+            encoding="utf-8",
+        ) as file:
             raw_metrics = json.load(file)
 
         if start_time.tzinfo is None:
-            start_time = start_time.replace(tzinfo=timezone.utc)
+            start_time = start_time.replace(
+                tzinfo=timezone.utc
+            )
 
         if end_time.tzinfo is None:
-            end_time = end_time.replace(tzinfo=timezone.utc)
+            end_time = end_time.replace(
+                tzinfo=timezone.utc
+            )
 
         records = []
 
@@ -54,14 +72,18 @@ def fetch_metrics(
                 continue
 
             timestamp = datetime.fromisoformat(
-                raw_metric["timestamp"].replace("Z", "+00:00")
+                raw_metric["timestamp"].replace(
+                    "Z",
+                    "+00:00",
+                )
             )
 
             if timestamp.tzinfo is None:
-                timestamp = timestamp.replace(tzinfo=timezone.utc)
+                timestamp = timestamp.replace(
+                    tzinfo=timezone.utc
+                )
 
             if start_time <= timestamp <= end_time:
-
                 dependency_health = [
                     DependencyHealth(
                         name=name,
@@ -79,7 +101,9 @@ def fetch_metrics(
                 }
 
                 records.append(
-                    MetricSnapshot.model_validate(metric_data)
+                    MetricSnapshot.model_validate(
+                        metric_data
+                    )
                 )
 
         return MetricFetchResult(
@@ -94,7 +118,9 @@ def fetch_metrics(
             success=False,
             records=[],
             error_code="METRIC_DATA_NOT_FOUND",
-            error_message=f"Metric data file not found: {DATA_FILE}",
+            error_message=(
+                f"Metric data file not found: {DATA_FILE}"
+            ),
         )
 
     except json.JSONDecodeError:

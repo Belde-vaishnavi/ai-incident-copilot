@@ -5,11 +5,16 @@ from app.models.investigation import (
     RunbookMatch,
     RunbookSearchResult,
 )
+from app.observability.tracer import trace_tool
 
 
 DATA_FILE = Path(__file__).resolve().parents[1] / "data" / "runbooks.json"
 
 
+@trace_tool(
+    tool_name="search_runbooks",
+    operation="search_runbooks",
+)
 def search_runbooks(
     query: str,
     service: str,
@@ -42,7 +47,7 @@ def search_runbooks(
             matches=[],
             error_code="INVALID_SEVERITY",
             error_message="Severity is required.",
-        )
+            )
 
     try:
         with DATA_FILE.open("r", encoding="utf-8") as file:

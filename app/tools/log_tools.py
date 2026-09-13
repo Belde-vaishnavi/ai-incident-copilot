@@ -3,11 +3,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from app.models.investigation import LogEntry, LogFetchResult
+from app.observability.tracer import trace_tool
 
 
-DATA_FILE = Path(__file__).resolve().parents[1] / "data" / "logs.json"
+DATA_FILE = (
+    Path(__file__).resolve().parents[1]
+    / "data"
+    / "logs.json"
+)
 
 
+@trace_tool(
+    tool_name="fetch_logs",
+    operation="fetch_logs",
+)
 def fetch_logs(
     service: str,
     start_time: datetime,
@@ -15,6 +24,8 @@ def fetch_logs(
 ) -> LogFetchResult:
     """
     Fetch simulated logs for a service within a specified time window.
+
+    The tool is read-only and returns structured success/error information.
     """
 
     if not service or not service.strip():
@@ -34,14 +45,21 @@ def fetch_logs(
         )
 
     try:
-        with DATA_FILE.open("r", encoding="utf-8") as file:
+        with DATA_FILE.open(
+            "r",
+            encoding="utf-8",
+        ) as file:
             raw_logs = json.load(file)
 
         if start_time.tzinfo is None:
-            start_time = start_time.replace(tzinfo=timezone.utc)
+            start_time = start_time.replace(
+                tzinfo=timezone.utc
+            )
 
         if end_time.tzinfo is None:
-            end_time = end_time.replace(tzinfo=timezone.utc)
+            end_time = end_time.replace(
+                tzinfo=timezone.utc
+            )
 
         records = []
 
@@ -50,11 +68,16 @@ def fetch_logs(
                 continue
 
             timestamp = datetime.fromisoformat(
-                raw_log["timestamp"].replace("Z", "+00:00")
+                raw_log["timestamp"].replace(
+                    "Z",
+                    "+00:00",
+                )
             )
 
             if timestamp.tzinfo is None:
-                timestamp = timestamp.replace(tzinfo=timezone.utc)
+                timestamp = timestamp.replace(
+                    tzinfo=timezone.utc
+                )
 
             if start_time <= timestamp <= end_time:
                 records.append(
@@ -73,7 +96,9 @@ def fetch_logs(
             success=False,
             records=[],
             error_code="LOG_DATA_NOT_FOUND",
-            error_message=f"Log data file not found: {DATA_FILE}",
+            error_message=(
+                f"Log data file not found: {DATA_FILE}"
+            ),
         )
 
     except json.JSONDecodeError:
