@@ -650,13 +650,6 @@ ServiceNow writes = disabled during automated evaluation
 
 ## 14. Final Evaluation Results
 
-The final evaluation was executed using:
-
-```text
-Model:
-openai/gpt-oss-20b
-```
-
 Results:
 
 | Metric | Result |
@@ -1056,10 +1049,4 @@ Clarify                     Diagnose
                                       ↓
                                 Final Outcome
 ```
-
-The key principle is:
-
-> The LLM performs reasoning and recommendation, while the workflow controls state, validation, branching, approval, and external side effects.
-
----
 
